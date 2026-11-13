@@ -144,3 +144,8 @@ Spec updates made while implementing (no change to agreed behaviour, but new det
 - New tests: TC-040a, TC-045a, TC-054, TC-064, TC-065.
 - 89 tests pass; fmt and clippy are clean; every test is cited except the trivial `app_name_is_stable`.
 - Untested: `--save` against a real host (part of the user's TC-048 run).
+
+## 15. Phase 3 CI
+**User:** Pushed phase 3 and the crosscheck 03 fixes.
+
+**Claude:** Run 43521068892: all four jobs pass. 89 tests pass on Linux, macOS and MSRV 1.92; 88 on Windows, where the unix-only `sh` quoting test does not run. TC-010 updated. Open: the user's real-host check (TC-048, Plan 3.6), plus the earlier manual checks.
