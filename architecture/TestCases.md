@@ -37,17 +37,18 @@ Each test case is traced to a Spec item.
 ## SPEC-006 / SPEC-007 / SPEC-008: SSH
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-030 | U | ssh config: `Host` wildcard matching; the first value found wins for each keyword. | _tbd_ | planned |
-| TC-031 | U | Precedence: app config > ssh config > defaults. | _tbd_ | planned |
+| TC-030 | U | ssh config: `Host` wildcards (`*`, `?`, `!`), case-insensitive; first value wins; global options; quoting and `Key=Value`. | `vi-ssh sshconfig::tests::host_wildcards_and_first_value_wins, quoting_and_equals` | pass (2026-11-13) |
+| TC-031 | U | Precedence: app config > ssh config > defaults; `IdentityFile` tokens (`%d`, `%h`, ...) and default keys when none given. | `vi-ssh sshconfig::tests::precedence_app_over_sshconfig_over_defaults, identity_tokens` | pass (2026-11-13) |
 | TC-031a | U | `identity_file` with a leading `~` is expanded to the home directory; `~user`, absolute and relative paths are unchanged. | `vi-core config::tests::identity_file_tilde_expansion` | pass (2026-11-13) |
-| TC-032 | U | A `ProxyJump` keyword gives a warning, not an error. | _tbd_ | planned |
-| TC-033 | U | known_hosts: matches a plain entry, matches a hashed entry (`\|1\|`), detects a mismatch, reports an unknown host. | _tbd_ | planned |
-| TC-034 | U | An accepted new host key is added to known_hosts in the correct format. | _tbd_ | planned |
-| TC-035 | U | The auth method list contains no password or keyboard-interactive method. | _tbd_ | planned |
-| TC-036 | H | Connects with agent auth to the test host and runs `virsh version`. | _tbd_ | planned |
-| TC-037 | H | Connects with an encrypted key file and a passphrase. | _tbd_ | planned |
-| TC-038 | M | Windows: agent auth through the OpenSSH agent and through Pageant. | — | planned |
-| TC-039 | U | Passphrases do not appear in log output (log capture test). | _tbd_ | planned |
+| TC-032 | U | `ProxyJump`, `Include` and `Match` give a warning, not an error. | `vi-ssh sshconfig::tests::unsupported_keywords_warn` | pass (2026-11-13) |
+| TC-033 | U | known_hosts: plain entry, hashed entry (`\|1\|`, incl. lines hashed by OpenSSH `ssh-keygen -H`), `[host]:port`, patterns/negation, `@revoked`, bad lines skipped; mismatch refused without prompting; unknown host reported. | `vi-ssh known_hosts::tests::plain_entries, hashed_entries, patterns_markers_and_bad_lines, known_wins_over_mismatch_of_same_type`; `tests/session.rs::mismatched_host_key_is_refused` | pass (2026-11-13) |
+| TC-034 | U/I | An accepted new host key is added to known_hosts (hashed, mode 0600, newline handling) and matches afterwards; a rejected key aborts and records nothing. | `vi-ssh known_hosts::tests::learn_appends_and_then_matches`; `tests/session.rs::unknown_host_is_learned_and_exec_works, rejected_host_key` | pass (2026-11-13) |
+| TC-035 | U | The auth plan is agent first, then key files; it has no password or keyboard-interactive step. | `vi-ssh session::tests::auth_plan_is_agent_then_key_files_only` | pass (2026-11-13) |
+| TC-036 | I/H | Connect and run a command: in-process test server (CI) and, manually, a real host with agent auth (`cargo run -p vi-ssh --example ssh-run -- HOST virsh version`). | `tests/session.rs::unknown_host_is_learned_and_exec_works`; real host: `ssh-run` | in-process: pass (2026-11-13); real host: open |
+| TC-037 | I/H | Encrypted key file with passphrase works; a wrong passphrase gives an auth failure saying so. | `tests/session.rs::encrypted_key_with_passphrase`; real host: `ssh-run` | in-process: pass (2026-11-13); real host: open |
+| TC-038 | M | Windows: agent auth through the OpenSSH agent pipe and through Pageant. | `ssh-run` example on Windows | open |
+| TC-039 | U/I | Passphrases never appear in Debug/Display output or in log output at trace level. | `vi-ssh secret::tests::never_printed`; `tests/logging.rs::passphrase_not_logged` | pass (2026-11-13) |
+| TC-039a | I | Auth failure lists every key tried with the reason; RSA keys authenticate (rsa-sha2). | `tests/session.rs::auth_failure_lists_tried_keys, rsa_key_works` | pass (2026-11-13) |
 
 ## SPEC-009 / SPEC-010: Inventory
 | ID | Type | Description | Test location | Status |
@@ -77,6 +78,7 @@ Each test case is traced to a Spec item.
 |----|------|-------------|---------------|--------|
 | TC-060 | I | Of 3 hosts, one hangs (mock delay). The other two finish; the hanging one times out. | _tbd_ | planned |
 | TC-061 | U | Error classification from the stderr of: virsh not found, permission denied, connection refused. | _tbd_ | planned |
+| TC-061a | I | SSH errors are classified: connection refused → connection, command timeout → timeout (session stays usable), host key, authentication; exit status and stderr are returned. | `tests/session.rs::connection_refused, exit_status_stderr_and_timeout` | pass (2026-11-13) |
 | TC-062 | I | Status transitions: idle → connecting → refreshing → ok/error. | _tbd_ | planned |
 
 ## SPEC-014: Cache
