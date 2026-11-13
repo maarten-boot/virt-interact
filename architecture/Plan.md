@@ -31,6 +31,7 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 - [x] 0.1 Create the Cargo workspace with the crates above. `cargo build` works on Linux. (2026-11-13)
 - [x] 0.2 Set up a CI matrix (GitHub Actions) on Windows, Linux and macOS: fmt, clippy, test, build, plus an MSRV job. (SPEC-002) Written; not yet run, because the repo is not pushed.
 - [x] 0.3 Set up a Rust `.gitignore` and the `Changes.md` workflow.
+- [x] 0.4 First CI runs (2026-11-13): new clippy lint in Rust 1.100 fixed; Windows CRLF checkout broke TC-028, so `.gitattributes` forces LF and CI tests run with `--no-fail-fast`.
 
 ### Phase 1: Config and theme (SPEC-001, 004, 005, 016)
 - [x] 1.1 Config model, load and save, platform paths, `--config` override, error with line number. (`vi-core/src/config.rs`, `paths.rs`)

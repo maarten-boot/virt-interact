@@ -104,3 +104,8 @@ Added `examples/ssh_config.example` plus a test. Everything else is waiting for 
 **Claude:** The first CI run (43442620200) started; it is also the first compile of the Windows-only code. Waiting for the result.
 
 **CI result (run 43442620200):** the MSRV job (1.92) passed. The stable jobs (rustc 1.100) failed in Clippy on all three OSes with one new lint, `clippy::question_mark` in `sshconfig.rs:189`. That was the only error, Windows included, so the `cfg(windows)` agent code compiles. Fixed locally (`?` instead of `match`); fmt, clippy and the 59 tests pass locally. Committed locally, **not pushed**, because the user had ended the session. Lesson: the local toolchain (1.93, no rustup) lags CI stable; consider rustup or pinning CI clippy.
+
+## 11. Second CI run
+**User:** Pushed the clippy fix. (The session watching CI ended before the run finished.)
+
+**Claude:** Run 43443728652: Linux, macOS (including the x86_64 cross build) and MSRV 1.92 pass. Windows failed in Test: `readme_config_examples_parse` found no "```toml\n" because the Windows runner checks out with CRLF. Because `cargo test` stops at the first failing test binary, the vi-ssh tests have not run on Windows yet. Fixes: the test normalises CRLF; `.gitattributes` (`* text=auto eol=lf`) keeps fixtures byte-identical on all platforms; CI runs tests with `--no-fail-fast`. Committed locally; to be pushed by the user.

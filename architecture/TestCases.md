@@ -18,7 +18,7 @@ Each test case is traced to a Spec item.
 ## SPEC-002 / SPEC-003: Platforms and GUI
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-010 | CI | Build and tests pass on windows-latest, ubuntu-latest and macos-latest (aarch64), plus an x86_64-apple-darwin build and the MSRV job. | `.github/workflows/ci.yml` | implemented (not yet run) |
+| TC-010 | CI | Build and tests pass on windows-latest, ubuntu-latest and macos-latest (aarch64), plus an x86_64-apple-darwin build and the MSRV job. | `.github/workflows/ci.yml` | run 43443728652 (2026-11-13): Linux, macOS, MSRV 1.92 pass; Windows failed on TC-028 (CRLF checkout), fixed; rerun pending |
 | TC-011 | M | The GUI starts on all three platforms with an empty config. | — | Linux: pass under Xvfb (2026-11-13); Windows/macOS: open |
 
 ## SPEC-004 / SPEC-005: Config and hosts

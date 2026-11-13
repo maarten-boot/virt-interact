@@ -1,0 +1,8 @@
+# Keep LF line endings in the repository and in every checkout, so that
+# fixtures (virsh output, known_hosts, keys) and examples are byte-identical
+# on all platforms, including Windows CI runners with core.autocrlf=true.
+* text=auto eol=lf
+
+# Binary files
+*.png binary
+*.ico binary

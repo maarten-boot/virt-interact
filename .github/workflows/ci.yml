@@ -48,7 +48,8 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Test
-        run: cargo test --workspace --locked
+        # --no-fail-fast: one failing test binary must not hide the others
+        run: cargo test --workspace --locked --no-fail-fast
 
       - name: Build release binary
         if: matrix.toolchain == 'stable'

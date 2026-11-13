@@ -572,9 +572,10 @@ virsh_prefix = "sudo -n"
     // TC-028: every ```toml block in the README must parse.
     #[test]
     fn readme_config_examples_parse() {
-        let readme = include_str!("../../../README.md");
+        // Normalise line endings: a Windows checkout may have CRLF.
+        let readme = include_str!("../../../README.md").replace("\r\n", "\n");
         let mut found = 0;
-        let mut rest = readme;
+        let mut rest = readme.as_str();
         while let Some(start) = rest.find("```toml\n") {
             let body = &rest[start + 8..];
             let end = body.find("```").expect("unterminated toml block");
