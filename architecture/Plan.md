@@ -33,10 +33,10 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 - [x] 0.3 Set up a Rust `.gitignore` and the `Changes.md` workflow.
 
 ### Phase 1: Config and theme (SPEC-001, 004, 005, 016)
-- [ ] 1.1 Config model, load and save, platform paths, `--config` override, error with line number.
-- [ ] 1.2 Contrast maths: WCAG relative luminance and ratio; palette generation for a given minimum ratio; presets; clamping.
-- [ ] 1.3 egui theme built from the palette (white/black default).
-- [ ] 1.4 Logging setup.
+- [x] 1.1 Config model, load and save, platform paths, `--config` override, error with line number. (`vi-core/src/config.rs`, `paths.rs`)
+- [x] 1.2 Contrast maths: WCAG relative luminance and ratio; palette generation for a given minimum ratio; presets; clamping. (`vi-core/src/contrast.rs`)
+- [x] 1.3 egui theme built from the palette (white/black default), plus a contrast control in the toolbar that saves to the config. (`vi-gui/src/theme.rs`, `main.rs`)
+- [x] 1.4 Logging setup. (`vi-core/src/logging.rs`)
 
 ### Phase 2: SSH (SPEC-006, 007, 008)
 - [ ] 2.1 `~/.ssh/config` subset parser and resolution of the effective host parameters.

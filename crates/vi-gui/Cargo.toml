@@ -15,6 +15,7 @@ path = "src/main.rs"
 vi-core.workspace = true
 vi-backend.workspace = true
 eframe.workspace = true
+tracing.workspace = true
 
 [lints]
 workspace = true

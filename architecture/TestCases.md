@@ -7,28 +7,28 @@ Each test case is traced to a Spec item.
 ## SPEC-001: Colour and contrast
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-001 | U | The default palette is a white background (#FFFFFF) with black text (#000000). | _tbd_ | planned |
-| TC-002 | U | The WCAG contrast function gives known values: black/white = 21.0, #777/#FFF ≈ 4.48. | _tbd_ | planned |
-| TC-003 | U | For each preset (AA, AAA, Max) and for custom ratios 5.0 and 10.0, every fg/bg pair in the palette is ≥ the minimum. | _tbd_ | planned |
-| TC-004 | U | Config `contrast = 3.0` is clamped to 4.5 and logs a warning. | _tbd_ | planned |
-| TC-005 | U | Config values `"AA"`, `"AAA"`, `"Max"` and `7.5` are parsed; an invalid string is an error. | _tbd_ | planned |
-| TC-006 | M | Changing contrast in the settings takes effect at once and is saved to the config file. | — | planned |
+| TC-001 | U | The default palette is a white background (#FFFFFF) with black text (#000000). | `vi-core contrast::tests::default_palette_is_white_on_black` | pass (2026-11-13) |
+| TC-002 | U | The WCAG contrast function gives known values: black/white = 21.0, #777/#FFF ≈ 4.48. | `vi-core contrast::tests::known_ratios` | pass (2026-11-13) |
+| TC-003 | U | For each preset (AA, AAA, Max) and for custom ratios 5.0 and 10.0, every fg/bg pair in the palette is ≥ the minimum. | `vi-core contrast::tests::every_pair_meets_minimum_for_all_levels, max_is_pure_black_and_white` | pass (2026-11-13) |
+| TC-004 | U | Config `contrast = 3.0` is clamped to 4.5 and logs a warning. | `vi-core contrast::tests::custom_below_minimum_is_clamped_with_warning; config::tests::low_contrast_in_file_is_clamped_with_warning` | pass (2026-11-13) |
+| TC-005 | U | Config values `"AA"`, `"AAA"`, `"Max"` and `7.5` are parsed; an invalid string is an error. | `vi-core contrast::tests::raw_contrast_values; config::tests::contrast_values_in_file` | pass (2026-11-13) |
+| TC-006 | M | Changing contrast in the toolbar takes effect at once and is saved to the config file. | — | planned (needs an interactive session) |
 
 ## SPEC-002 / SPEC-003: Platforms and GUI
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
 | TC-010 | CI | Build and tests pass on windows-latest, ubuntu-latest and macos-latest. | `.github/workflows/ci.yml` | implemented (not yet run) |
-| TC-011 | M | The GUI starts on all three platforms with an empty config. | — | planned |
+| TC-011 | M | The GUI starts on all three platforms with an empty config. | — | Linux: pass under Xvfb (2026-11-13); Windows/macOS: open |
 
 ## SPEC-004 / SPEC-005: Config and hosts
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-020 | U | A config with 2 hosts survives a round trip (load, save, load gives the same result). | _tbd_ | planned |
-| TC-021 | U | A missing file gives defaults; it is not created until the first save. | _tbd_ | planned |
-| TC-022 | U | Invalid TOML gives an error with the line number, and the file is not modified. | _tbd_ | planned |
-| TC-023 | U | Defaults are applied: port 22, backend libvirt, URI `qemu:///system`. | _tbd_ | planned |
-| TC-024 | U | A duplicate host `name` is rejected. | _tbd_ | planned |
-| TC-025 | U | The `--config` path override is used. | _tbd_ | planned |
+| TC-020 | U | A config with 2 hosts survives a round trip (load, save, load gives the same result). | `vi-core config::tests::round_trip_two_hosts, round_trip_custom_contrast` | pass (2026-11-13) |
+| TC-021 | U | A missing file gives defaults; it is not created until the first save. | `vi-core config::tests::missing_file_gives_defaults_and_is_not_created` | pass (2026-11-13) |
+| TC-022 | U | Invalid TOML gives an error with the line number, and the file is not modified. | `vi-core config::tests::invalid_toml_reports_line_and_is_not_overwritten, unknown_key_is_an_error_with_line` | pass (2026-11-13) |
+| TC-023 | U | Defaults are applied: port 22, backend libvirt, URI `qemu:///system`. | `vi-core config::tests::host_defaults` | pass (2026-11-13) |
+| TC-024 | U | A duplicate host `name` is rejected. | `vi-core config::tests::duplicate_host_name_rejected` | pass (2026-11-13) |
+| TC-025 | U | The `--config` path override is used. | `vi-core paths::tests::config_override` | pass (2026-11-13) |
 
 ## SPEC-006 / SPEC-007 / SPEC-008: SSH
 | ID | Type | Description | Test location | Status |
@@ -87,7 +87,7 @@ Each test case is traced to a Spec item.
 | TC-080 | U | The filter by name substring and state gives the expected VM set. | _tbd_ | planned |
 | TC-081 | M | The tree, detail panel, raw XML copy and toolbar actions work. | — | planned |
 | TC-082 | U | The state indicator has a text or icon label, not only colour. | _tbd_ | planned |
-| TC-083 | U | The log file is created in the platform log directory at the configured level. | _tbd_ | planned |
+| TC-083 | U | The log file is created in the platform log directory at the configured level. | `vi-core logging::tests::writes_log_file_at_level, other_crates_only_warn` | pass (2026-11-13) |
 
 ## SPEC-017: Backend abstraction
 | ID | Type | Description | Test location | Status |

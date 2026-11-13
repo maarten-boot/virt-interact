@@ -12,6 +12,14 @@ repository = "https://github.com/maarten-boot/virt-interact"
 vi-core = { path = "crates/vi-core" }
 vi-ssh = { path = "crates/vi-ssh" }
 vi-backend = { path = "crates/vi-backend" }
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+dirs = "7"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+tempfile = "3"
 eframe = "0.35"   # 0.36+ needs rustc 1.95; local toolchain is 1.93
 
 [workspace.lints.rust]

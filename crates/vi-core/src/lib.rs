@@ -1,7 +1,10 @@
 //! Core types for virt-interact: configuration (SPEC-004/005), theme and
-//! contrast (SPEC-001), inventory model and cache (SPEC-014).
-//!
-//! Phase 0: skeleton only.
+//! contrast (SPEC-001), paths and command line, logging (SPEC-016).
+
+pub mod config;
+pub mod contrast;
+pub mod logging;
+pub mod paths;
 
 /// Application name, used for config/cache/log directories (SPEC-004).
 pub const APP_NAME: &str = "virt-interact";

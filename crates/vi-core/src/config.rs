@@ -1,0 +1,499 @@
+//! Configuration file (SPEC-004) and host definitions (SPEC-005).
+//!
+//! ```toml
+//! [ui]
+//! contrast = "AA"          # "AA" | "AAA" | "Max" | number >= 4.5
+//!
+//! [ssh]
+//! connect_timeout_secs = 10
+//! command_timeout_secs = 30
+//!
+//! [logging]
+//! level = "info"
+//!
+//! [[hosts]]
+//! name = "lab"
+//! host = "lab.example.lan"
+//! user = "ops"
+//! # port, identity_file, backend, libvirt_uri, virsh_prefix are optional
+//! ```
+
+use std::collections::HashSet;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use crate::contrast::{ContrastLevel, RawContrast};
+
+pub const DEFAULT_SSH_PORT: u16 = 22;
+pub const DEFAULT_LIBVIRT_URI: &str = "qemu:///system";
+
+/// The whole configuration file.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Config {
+    pub ui: UiConfig,
+    pub ssh: SshSettings,
+    pub logging: LoggingConfig,
+    pub hosts: Vec<HostConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UiConfig {
+    /// Minimum contrast (SPEC-001).
+    pub contrast: ContrastLevel,
+}
+
+/// Timeouts (SPEC-012).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SshSettings {
+    pub connect_timeout_secs: u64,
+    pub command_timeout_secs: u64,
+}
+
+impl Default for SshSettings {
+    fn default() -> Self {
+        SshSettings {
+            connect_timeout_secs: 10,
+            command_timeout_secs: 30,
+        }
+    }
+}
+
+/// Logging (SPEC-016).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LoggingConfig {
+    /// `error`, `warn`, `info`, `debug` or `trace`.
+    pub level: String,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        LoggingConfig {
+            level: "info".into(),
+        }
+    }
+}
+
+/// Virtualisation backend (SPEC-017).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Backend {
+    #[default]
+    Libvirt,
+}
+
+/// One remote host (SPEC-005).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostConfig {
+    /// Display name, unique.
+    pub name: String,
+    /// Hostname, IP address or `~/.ssh/config` alias.
+    pub host: String,
+    /// SSH port; `None` means "from ssh config, else 22".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    /// Remote user; `None` means "from ssh config, else the local user".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    /// Private key path; `None` means "from ssh config / agent / default keys".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_file: Option<PathBuf>,
+    #[serde(default)]
+    pub backend: Backend,
+    #[serde(default = "default_libvirt_uri")]
+    pub libvirt_uri: String,
+    /// Command prefix such as `"sudo -n"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub virsh_prefix: Option<String>,
+}
+
+fn default_libvirt_uri() -> String {
+    DEFAULT_LIBVIRT_URI.into()
+}
+
+impl HostConfig {
+    /// A host with only the required fields; everything else default.
+    pub fn new(name: impl Into<String>, host: impl Into<String>) -> HostConfig {
+        HostConfig {
+            name: name.into(),
+            host: host.into(),
+            port: None,
+            user: None,
+            identity_file: None,
+            backend: Backend::default(),
+            libvirt_uri: default_libvirt_uri(),
+            virsh_prefix: None,
+        }
+    }
+
+    /// The port when no ssh config value applies.
+    pub fn port_or_default(&self) -> u16 {
+        self.port.unwrap_or(DEFAULT_SSH_PORT)
+    }
+}
+
+/// Errors from loading, validating or saving the config.
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error("cannot read {path}: {source}")]
+    Read { path: PathBuf, source: io::Error },
+    #[error("{path}:{line}:{column}: {message}")]
+    Parse {
+        path: PathBuf,
+        line: usize,
+        column: usize,
+        message: String,
+    },
+    #[error("{path}: {message}")]
+    Invalid { path: PathBuf, message: String },
+    #[error("cannot write {path}: {source}")]
+    Write { path: PathBuf, source: io::Error },
+    #[error("cannot serialise config: {0}")]
+    Serialise(#[from] toml::ser::Error),
+    #[error("{path} could not be loaded; refusing to overwrite it. Fix or remove the file first.")]
+    ReadOnly { path: PathBuf },
+}
+
+/// Result of a successful load.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Loaded {
+    pub config: Config,
+    /// `false` if the file does not exist yet (defaults are used).
+    pub existed: bool,
+    /// Non-fatal problems, e.g. a clamped contrast value (TC-004).
+    pub warnings: Vec<String>,
+}
+
+impl Config {
+    /// Parse config text. `path` is only used in messages.
+    pub fn parse(text: &str, path: &Path) -> Result<(Config, Vec<String>), ConfigError> {
+        let config: Config = toml::from_str(text).map_err(|e| {
+            let (line, column) = e.span().map(|s| line_col(text, s.start)).unwrap_or((0, 0));
+            ConfigError::Parse {
+                path: path.to_path_buf(),
+                line,
+                column,
+                message: e.message().trim().to_string(),
+            }
+        })?;
+
+        // Re-read the raw contrast value to report clamping (TC-004).
+        let mut warnings = Vec::new();
+        if let Ok(table) = toml::from_str::<toml::Table>(text)
+            && let Some(raw) = table
+                .get("ui")
+                .and_then(|u| u.get("contrast"))
+                .cloned()
+                .and_then(|v| v.try_into::<RawContrast>().ok())
+            && let Ok((_, Some(w))) = raw.resolve()
+        {
+            warnings.push(w);
+        }
+
+        config.validate(path)?;
+        Ok((config, warnings))
+    }
+
+    /// Check rules that serde cannot express (TC-024).
+    pub fn validate(&self, path: &Path) -> Result<(), ConfigError> {
+        let invalid = |message: String| ConfigError::Invalid {
+            path: path.to_path_buf(),
+            message,
+        };
+        let mut seen = HashSet::new();
+        for (i, h) in self.hosts.iter().enumerate() {
+            if h.name.trim().is_empty() {
+                return Err(invalid(format!("hosts[{i}]: name must not be empty")));
+            }
+            if h.host.trim().is_empty() {
+                return Err(invalid(format!(
+                    "host \"{}\": host must not be empty",
+                    h.name
+                )));
+            }
+            if !seen.insert(h.name.as_str()) {
+                return Err(invalid(format!("duplicate host name \"{}\"", h.name)));
+            }
+        }
+        const LEVELS: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
+        if !LEVELS.contains(&self.logging.level.to_ascii_lowercase().as_str()) {
+            return Err(invalid(format!(
+                "logging.level \"{}\" must be one of {}",
+                self.logging.level,
+                LEVELS.join(", ")
+            )));
+        }
+        Ok(())
+    }
+
+    /// Load from `path`. A missing file gives defaults and is *not* created
+    /// (TC-021).
+    pub fn load(path: &Path) -> Result<Loaded, ConfigError> {
+        match fs::read_to_string(path) {
+            Ok(text) => {
+                let (config, warnings) = Config::parse(&text, path)?;
+                Ok(Loaded {
+                    config,
+                    existed: true,
+                    warnings,
+                })
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Loaded {
+                config: Config::default(),
+                existed: false,
+                warnings: Vec::new(),
+            }),
+            Err(source) => Err(ConfigError::Read {
+                path: path.to_path_buf(),
+                source,
+            }),
+        }
+    }
+
+    /// Serialise to TOML text.
+    pub fn to_toml(&self) -> Result<String, ConfigError> {
+        Ok(toml::to_string_pretty(self)?)
+    }
+
+    /// Validate and write atomically (temp file + rename). Creates the parent
+    /// directory if needed.
+    pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
+        self.validate(path)?;
+        let text = self.to_toml()?;
+        let werr = |source| ConfigError::Write {
+            path: path.to_path_buf(),
+            source,
+        };
+        if let Some(dir) = path.parent()
+            && !dir.as_os_str().is_empty()
+        {
+            fs::create_dir_all(dir).map_err(werr)?;
+        }
+        let tmp = path.with_extension("toml.tmp");
+        fs::write(&tmp, text).map_err(werr)?;
+        fs::rename(&tmp, path).map_err(werr)
+    }
+}
+
+/// The config together with where it lives and whether it may be written.
+///
+/// If the file exists but could not be loaded, the store is read-only so the
+/// user's file is never overwritten (SPEC-004, TC-022).
+#[derive(Debug, Clone)]
+pub struct ConfigStore {
+    pub path: PathBuf,
+    pub config: Config,
+    pub writable: bool,
+}
+
+impl ConfigStore {
+    /// Load, falling back to defaults (read-only) on error. Returns the store
+    /// plus messages to show/log: warnings, or the load error.
+    pub fn open(path: PathBuf) -> (ConfigStore, Vec<String>, Option<ConfigError>) {
+        match Config::load(&path) {
+            Ok(l) => (
+                ConfigStore {
+                    path,
+                    config: l.config,
+                    writable: true,
+                },
+                l.warnings,
+                None,
+            ),
+            Err(e) => (
+                ConfigStore {
+                    path,
+                    config: Config::default(),
+                    writable: false,
+                },
+                Vec::new(),
+                Some(e),
+            ),
+        }
+    }
+
+    pub fn save(&self) -> Result<(), ConfigError> {
+        if !self.writable {
+            return Err(ConfigError::ReadOnly {
+                path: self.path.clone(),
+            });
+        }
+        self.config.save(&self.path)
+    }
+}
+
+/// 1-based line and column of a byte offset.
+fn line_col(text: &str, offset: usize) -> (usize, usize) {
+    let before = &text[..offset.min(text.len())];
+    let line = before.matches('\n').count() + 1;
+    let column = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
+    (line, column)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TWO_HOSTS: &str = r#"
+[ui]
+contrast = "AAA"
+
+[[hosts]]
+name = "lab"
+host = "lab.example.lan"
+user = "ops"
+port = 2222
+
+[[hosts]]
+name = "edge"
+host = "edge-alias"
+identity_file = "/home/ops/.ssh/id_ed25519"
+libvirt_uri = "qemu:///session"
+virsh_prefix = "sudo -n"
+"#;
+
+    fn p() -> &'static Path {
+        Path::new("test.toml")
+    }
+
+    // TC-020
+    #[test]
+    fn round_trip_two_hosts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let (cfg, w) = Config::parse(TWO_HOSTS, p()).unwrap();
+        assert!(w.is_empty());
+        assert_eq!(cfg.hosts.len(), 2);
+        assert_eq!(cfg.ui.contrast, ContrastLevel::Aaa);
+        cfg.save(&path).unwrap();
+        let again = Config::load(&path).unwrap();
+        assert!(again.existed);
+        assert_eq!(again.config, cfg);
+    }
+
+    // TC-020: custom contrast survives a round trip as a number
+    #[test]
+    fn round_trip_custom_contrast() {
+        let mut cfg = Config::default();
+        cfg.ui.contrast = ContrastLevel::Custom(9.5);
+        let text = cfg.to_toml().unwrap();
+        assert!(text.contains("contrast = 9.5"), "{text}");
+        let (back, _) = Config::parse(&text, p()).unwrap();
+        assert_eq!(back, cfg);
+    }
+
+    // TC-021
+    #[test]
+    fn missing_file_gives_defaults_and_is_not_created() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sub").join("config.toml");
+        let l = Config::load(&path).unwrap();
+        assert!(!l.existed);
+        assert_eq!(l.config, Config::default());
+        assert!(!path.exists());
+        assert!(!path.parent().unwrap().exists());
+    }
+
+    // TC-022
+    #[test]
+    fn invalid_toml_reports_line_and_is_not_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let bad = "[ui]\ncontrast = \"AA\"\n\n[[hosts]]\nname = \"x\"\nhost = \n";
+        fs::write(&path, bad).unwrap();
+        let (store, _, err) = ConfigStore::open(path.clone());
+        match err {
+            Some(ConfigError::Parse { line, .. }) => assert_eq!(line, 6),
+            other => panic!("expected parse error, got {other:?}"),
+        }
+        assert!(!store.writable);
+        assert!(matches!(store.save(), Err(ConfigError::ReadOnly { .. })));
+        assert_eq!(fs::read_to_string(&path).unwrap(), bad);
+    }
+
+    // TC-022: unknown keys are reported with their line
+    #[test]
+    fn unknown_key_is_an_error_with_line() {
+        let text = "[ui]\ncontrast = \"AA\"\ncolour = \"red\"\n";
+        match Config::parse(text, p()) {
+            Err(ConfigError::Parse { line, message, .. }) => {
+                assert_eq!(line, 3);
+                assert!(message.contains("colour"), "{message}");
+            }
+            other => panic!("expected parse error, got {other:?}"),
+        }
+    }
+
+    // TC-023
+    #[test]
+    fn host_defaults() {
+        let (cfg, _) = Config::parse("[[hosts]]\nname = \"a\"\nhost = \"h\"\n", p()).unwrap();
+        let h = &cfg.hosts[0];
+        assert_eq!(h.port, None);
+        assert_eq!(h.port_or_default(), 22);
+        assert_eq!(h.backend, Backend::Libvirt);
+        assert_eq!(h.libvirt_uri, "qemu:///system");
+        assert_eq!(h.virsh_prefix, None);
+        assert_eq!(*h, HostConfig::new("a", "h"));
+        assert_eq!(cfg.ssh, SshSettings::default());
+        assert_eq!(cfg.ui.contrast, ContrastLevel::Aa);
+        assert_eq!(cfg.logging.level, "info");
+    }
+
+    // TC-024
+    #[test]
+    fn duplicate_host_name_rejected() {
+        let text =
+            "[[hosts]]\nname = \"a\"\nhost = \"h1\"\n[[hosts]]\nname = \"a\"\nhost = \"h2\"\n";
+        match Config::parse(text, p()) {
+            Err(ConfigError::Invalid { message, .. }) => assert!(message.contains("duplicate")),
+            other => panic!("expected invalid, got {other:?}"),
+        }
+    }
+
+    // TC-004 via the config file
+    #[test]
+    fn low_contrast_in_file_is_clamped_with_warning() {
+        let (cfg, w) = Config::parse("[ui]\ncontrast = 3.0\n", p()).unwrap();
+        assert_eq!(cfg.ui.contrast, ContrastLevel::Custom(4.5));
+        assert_eq!(w.len(), 1);
+        let (cfg, w) = Config::parse("[ui]\ncontrast = 3\n", p()).unwrap();
+        assert_eq!(cfg.ui.contrast, ContrastLevel::Custom(4.5));
+        assert_eq!(w.len(), 1);
+    }
+
+    // TC-005 via the config file
+    #[test]
+    fn contrast_values_in_file() {
+        for (v, want) in [
+            ("\"AA\"", ContrastLevel::Aa),
+            ("\"AAA\"", ContrastLevel::Aaa),
+            ("\"Max\"", ContrastLevel::Max),
+            ("7.5", ContrastLevel::Custom(7.5)),
+        ] {
+            let (cfg, w) = Config::parse(&format!("[ui]\ncontrast = {v}\n"), p()).unwrap();
+            assert_eq!(cfg.ui.contrast, want, "{v}");
+            assert!(w.is_empty());
+        }
+        assert!(matches!(
+            Config::parse("[ui]\ncontrast = \"high\"\n", p()),
+            Err(ConfigError::Parse { line: 2, .. })
+        ));
+    }
+
+    #[test]
+    fn invalid_log_level_rejected() {
+        assert!(matches!(
+            Config::parse("[logging]\nlevel = \"loud\"\n", p()),
+            Err(ConfigError::Invalid { .. })
+        ));
+    }
+}

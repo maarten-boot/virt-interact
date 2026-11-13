@@ -24,7 +24,8 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
 - The user can raise the minimum contrast:
   - interactively, from a control in the GUI, with immediate effect;
   - through the config file (SPEC-004), with `[ui] contrast = "AA" | "AAA" | "Max" | <number>`.
-- Presets: AA = 4.5:1, AAA = 7:1, Max = 21:1 (pure black on white). A custom number sets the minimum ratio and must be at least 4.5. Lower values are clamped to 4.5 and a warning is logged.
+- Presets: AA = 4.5:1, AAA = 7:1, Max = 21:1 (pure black on white). A custom number sets the minimum ratio and must be at least 4.5. Lower values are clamped to 4.5, and values above 21 are clamped to 21; in both cases a warning is logged and shown.
+- The palette is generated for the chosen minimum: backgrounds are lightened toward white and foregrounds darkened toward black until every pair reaches it. The toolbar shows the lowest ratio of all pairs in the current palette.
 - A change made interactively is saved back to the config file.
 
 ## 3. Configuration
@@ -36,7 +37,7 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
   - macOS: `~/Library/Application Support/virt-interact/config.toml`
 - A command-line option `--config <path>` overrides the location.
 - If the file is missing, the app starts with defaults and creates the file the first time it saves.
-- An invalid file gives a clear error message with the line number. The app does not overwrite an invalid file.
+- An invalid file gives a clear error message with the line number. Unknown keys count as invalid, so typing mistakes are caught. The app does not overwrite an invalid file: it starts with defaults and does not save changes until the file is fixed.
 
 ### SPEC-005: Host definitions (v1)
 Each host has these fields:
@@ -136,7 +137,8 @@ These errors are shown per host, in plain language, with the underlying detail a
 - **Filter:** by VM name (substring) and by state.
 
 ### SPEC-016: Logging (v1)
-- Logs go to a file in the platform data/log directory. The level is configurable (default `info`).
+- Logs go to a file in the platform data directory (`<data_local_dir>/virt-interact/logs/virt-interact.log.YYYY-MM-DD`, daily rotation). The level is configurable (default `info`). It applies to virt-interact's own code; other libraries log at `warn`. The `RUST_LOG` environment variable overrides both.
+- Warnings and errors are also written to stderr.
 - Logs never contain passphrases or private key material.
 
 ## 7. Architecture

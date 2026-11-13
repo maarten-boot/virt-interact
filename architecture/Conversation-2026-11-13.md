@@ -48,3 +48,10 @@
 **User:** Added another capture directory in `tmp/` (a UEFI VM may not be available at the moment).
 
 **Claude:** Second host: libvirt 10.0.0 / QEMU 8.2.2, 3 running VMs. New cases: SPICE `listen none` on a running VM (`domdisplay` reports "No graphical display found"), a NAT network with `portid`/`virbr0`, a `<title>`, and dominfo without `Autostart Once`. Extended the anonymiser to cover `<title>`/`<description>` and to rebuild the `list --all` table in virsh's column layout. No leaks found. Committed as `tests/fixtures/libvirt-10.0.0/`. UEFI stays on the missing list; it is not blocking.
+
+## 6. Phase 1
+**User:** Start phase 1.
+
+**Claude:** Implemented in `vi-core`: `contrast` (WCAG ratio, levels, palette generation), `config` (TOML, defaults, validation, atomic save, read-only store when the file is invalid), `paths` (platform directories, `--config`/`--help`/`--version`) and `logging` (daily file, own crates at the configured level, others at `warn`). In `vi-gui`: a theme generated from the palette, a contrast control in the toolbar that saves to the config, and dismissable warning/error messages. There are 22 unit tests, and they pass. A smoke test under Xvfb showed the white/black window, a clamped contrast warning, a config error shown in the GUI without overwriting the file, and the log file being created. Two issues found and fixed during the smoke test: long messages were not wrapping, and the log contained library noise.
+
+Spec clarifications made while implementing: unknown config keys are errors; contrast values above 21 are clamped; the log level applies to our own crates only (`RUST_LOG` overrides); the toolbar shows the lowest contrast ratio.
