@@ -132,3 +132,15 @@ Spec updates made while implementing (no change to agreed behaviour, but new det
 **User:** Do a crosscheck.
 
 **Claude:** Saved `architecture/Crosscheck-2026-11-13-03.md`. 86 tests pass, and fmt and clippy are clean. Main finding (C1): a command timeout on one domain, for example `domblkinfo` on a hung NFS disk, aborts the whole host refresh, against SPEC-013. Smaller findings: a misleading hint for exit status 126 (C2); test gaps (C3, C5); `Listen::Network` drops the live address needed in v1.1 (C4); Spec wording on other devices and the prefix (S1, S2); the Plan technology table and risks (S3, S4); TestCases citations and wording (T1–T3). Added a comment on the `virsh_prefix` rules to `examples/config.example.toml`. Everything else waits for the user's OK.
+
+**User:** Apply all fixes, including improvements 1–2.
+
+**Claude:** Applied C1–C5, S1–S4, T1–T3 and improvements 1–2 (details in Crosscheck-2026-11-13-03 §8):
+- A command timeout for one domain or disk no longer fails the host.
+- Up to 4 domains per host are queried in parallel over one SSH connection.
+- Exit status 126 is classified correctly.
+- A network listen keeps its live address.
+- `inventory --save DIR` and `scripts/anonymise_fixtures.py` handle new captures. The script was tried on a synthetic capture, and its leak check fails on leftovers. It replaces the earlier scratchpad-only script, which has been deleted.
+- New tests: TC-040a, TC-045a, TC-054, TC-064, TC-065.
+- 89 tests pass; fmt and clippy are clean; every test is cited except the trivial `app_name_is_stable`.
+- Untested: `--save` against a real host (part of the user's TC-048 run).

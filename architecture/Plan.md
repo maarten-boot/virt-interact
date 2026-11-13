@@ -10,10 +10,11 @@ Status: draft v1, 2026-11-13. The SPEC references point to `Spec.md`.
 | Async | `tokio` | Needed by `russh`; background work off the GUI thread |
 | SSH | `russh` 0.65 (+ its key/agent support), crypto backend `ring` | Pure Rust; tunnels inside the same session (SPEC-018); `ring` avoids cmake/NASM on Windows |
 | XML | `roxmltree` | Read-only parsing of `virsh dumpxml` output |
-| Config | `serde` + `toml`, `directories` | SPEC-004 |
-| Cache | `serde_json` | SPEC-014 |
+| Config | `serde` + `toml`, `dirs` | SPEC-004 |
+| Cache | `serde_json` (added in 4.4) | SPEC-014 |
 | Logging | `tracing`, `tracing-subscriber`, `tracing-appender` | SPEC-016 |
-| Errors | `thiserror` (library code), `anyhow` (application) | |
+| Errors | `thiserror` | |
+| Parallel domain queries | `futures-util` (`buffered`) | SPEC-012 |
 
 ## Code layout (Cargo workspace)
 ```
@@ -61,7 +62,9 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 - [ ] 3.5 Collect fixtures from real hosts: running and stopped VMs, UEFI and BIOS, VNC and SPICE, socket listen.
   - Done (2026-11-13): 7 running (libvirt 12.0.0, VNC and SPICE, bridge) and 3 stopped (VNC, SPICE incl. `listen none`, NAT and bridge), anonymised.
   - Added: a second host with libvirt 10.0.0 (3 running VMs, including SPICE `listen none` on a running VM, NAT network).
+  - New captures: `inventory --save DIR <host>` (into the git-ignored `tmp/`), then `scripts/anonymise_fixtures.py DIR tests/fixtures/<set> --leak <hostname>`; review by eye before committing.
   - Still missing: UEFI (no UEFI VM available at the moment), a socket listen on a running VM, a network/volume disk, hostdev, and a host with stopped VMs in `list --all`. Until then these cases are tested with small synthetic XML in `domxml.rs`.
+- [x] 3.7 Crosscheck 03 fixes: per-domain timeouts, exit status 126, network listen address, up to 4 domains in parallel per host, `inventory --save` and `scripts/anonymise_fixtures.py` for new captures. (2026-11-13)
 - [ ] 3.6 Real-host check (TC-048), by the user: `cargo run -p vi-backend --example inventory -- <host>`. Confirms that the read-only connection allows `domblkinfo`, and that the output matches `virsh list --all` on the host.
 
 ### Phase 4: GUI (SPEC-003, 005, 012, 014, 015)
@@ -90,6 +93,7 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 |------|-----------|
 | russh agent support on Windows (named pipe / Pageant) | Source review (2.5): russh supports both, and both are used. Compiles and tests pass in CI (run 43509629083). Open: a manual run (TC-038). Fallback: key files with a passphrase prompt. |
 | virsh output and XML differ between libvirt versions | Fixtures from several versions; tolerant parser (unknown elements are ignored, not fatal). |
+| Read-only connection (`virsh -r`) and `LC_ALL=C` through `sudo -n` are not yet checked on a real host | TC-048, run with and without `--prefix`. If `domblkinfo` is refused on a read-only connection, sizes show as unknown (no failure); if sudo drops `LC_ALL`, non-English output would give parse problems. |
 | `qemu:///system` permissions | Clear error message with a hint (SPEC-013); `virsh_prefix = "sudo -n"` option. |
 | macOS signing and notarization | Postpone to 5.1; an unsigned build is fine for development. |
 | No mature Rust SPICE client | v1.1 uses an external `remote-viewer`. |

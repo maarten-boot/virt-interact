@@ -102,6 +102,15 @@ pub fn classify(subcommand: &str, uri: &str, out: &CommandOutput) -> BackendErro
     {
         return BackendError::VirshNotFound { detail };
     }
+    // 126: found but not executable. Not a libvirt permission problem, so
+    // no libvirt-group hint (C2 of crosscheck 03).
+    if out.exit_status == Some(126) {
+        return BackendError::CommandFailed {
+            subcommand: subcommand.to_string(),
+            status,
+            detail,
+        };
+    }
     if lower.starts_with("sudo:") || lower.contains("\nsudo:") {
         return BackendError::PrefixFailed { detail };
     }
@@ -171,6 +180,19 @@ mod tests {
             ),
             BackendErrorKind::Hypervisor
         );
+        // sudo prefix with virsh missing: not found, not a sudo problem.
+        assert_eq!(
+            kind(1, "sudo: virsh: command not found\n"),
+            BackendErrorKind::VirshNotFound
+        );
+        // Not executable: no libvirt-group hint.
+        let e = classify(
+            "version",
+            URI,
+            &CommandOutput::failed(126, "bash: line 1: /usr/bin/virsh: Permission denied\n"),
+        );
+        assert_eq!(e.kind(), BackendErrorKind::Other);
+        assert!(!e.to_string().contains("libvirt' group"), "{e}");
         assert_eq!(
             kind(1, "sudo: a password is required\n"),
             BackendErrorKind::PermissionDenied

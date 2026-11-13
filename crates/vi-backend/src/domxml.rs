@@ -207,7 +207,10 @@ fn graphics(n: Node) -> Graphics {
     let listen = match attr(l, "type").as_deref() {
         Some("none") => Listen::None,
         Some("socket") => Listen::Socket(attr(l, "socket").or_else(|| attr(Some(n), "socket"))),
-        Some("network") => Listen::Network(attr(l, "network")),
+        Some("network") => Listen::Network {
+            network: attr(l, "network"),
+            address: attr(l, "address"),
+        },
         Some(_) => Listen::Address(attr(l, "address").or_else(|| attr(Some(n), "listen"))),
         None => match (n.attribute("listen"), n.attribute("socket")) {
             (_, Some(s)) => Listen::Socket(Some(s.to_string())),
@@ -297,6 +300,7 @@ mod tests {
           <devices>
             <graphics type="spice"><listen type="socket" socket="/run/x.sock"/></graphics>
             <graphics type="vnc" port="5900" tlsPort="5901" listen="0.0.0.0"/>
+            <graphics type="vnc" port="5902"><listen type="network" network="lan" address="192.0.2.10"/></graphics>
           </devices></domain>"#;
         let d = parse(x).unwrap();
         assert_eq!(d.general.firmware, Firmware::Uefi);
@@ -320,6 +324,14 @@ mod tests {
             d.graphics[1].listen,
             Listen::Address(Some("0.0.0.0".into()))
         );
+        assert_eq!(
+            d.graphics[2].listen,
+            Listen::Network {
+                network: Some("lan".into()),
+                address: Some("192.0.2.10".into())
+            }
+        );
+        assert_eq!(d.graphics[2].listen.describe(), "network lan (192.0.2.10)");
         assert_eq!(
             (d.graphics[1].port, d.graphics[1].tls_port),
             (Some(5900), Some(5901))

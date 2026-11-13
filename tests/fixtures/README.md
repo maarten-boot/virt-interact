@@ -16,6 +16,18 @@ Wanted: running and stopped VMs, BIOS and UEFI, VNC and SPICE, a socket listen,
 a network or volume disk. Remove or anonymise anything sensitive (hostnames,
 paths, MAC addresses) before committing.
 
+## Capturing a new set
+
+```sh
+cargo run -p vi-backend --example inventory -- --save tmp/capture-<n> <host>
+python3 scripts/anonymise_fixtures.py tmp/capture-<n> tests/fixtures/<set> --leak <host-name> --leak <other words>
+```
+
+`tmp/` is git-ignored, so the raw capture never gets committed. The script
+replaces names, UUIDs, MACs, IPs, paths and host names, then fails if any
+original value or `--leak` word is left. Network/bridge names and custom
+`<metadata>` are **not** replaced: review the result by eye before committing.
+
 ## Anonymisation (mandatory)
 
 Never commit real VM names, hostnames, IP or MAC addresses, UUIDs or image paths.

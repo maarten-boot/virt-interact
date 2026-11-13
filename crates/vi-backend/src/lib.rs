@@ -33,3 +33,20 @@ pub fn for_host(host: &HostConfig) -> Result<Box<dyn HypervisorBackend>, Backend
         Backend::Libvirt => Ok(Box::new(LibvirtBackend::from_host(host)?)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // TC-054
+    #[test]
+    fn backend_from_host_config() {
+        let mut h = HostConfig::new("a", "h");
+        assert_eq!(for_host(&h).unwrap().name(), "libvirt");
+        h.virsh_prefix = Some("sudo; x".into());
+        assert_eq!(
+            for_host(&h).err().map(|e| e.kind()),
+            Some(BackendErrorKind::Config)
+        );
+    }
+}

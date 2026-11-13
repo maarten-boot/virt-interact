@@ -33,4 +33,4 @@ These rules were agreed in the session of 2026-11-13. See `architecture/Conversa
 - Let the user raise contrast interactively and through a config file, with presets AA (4.5:1), AAA (7:1) and Max (21:1, pure black/white) plus a custom minimum ratio.
 
 ## Privacy of test data
-- Never commit real machine names, hostnames, IP or MAC addresses, UUIDs or image paths (for example, in fixtures, docs, logs or commit messages). Substitute random data, consistently within one capture. See `tests/fixtures/README.md`.
+- Never commit real machine names, hostnames, IP or MAC addresses, UUIDs or image paths (for example, in fixtures, docs, logs or commit messages). Substitute random data, consistently within one capture. Use `scripts/anonymise_fixtures.py` and review the result; see `tests/fixtures/README.md`.

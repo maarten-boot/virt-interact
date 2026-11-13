@@ -3,20 +3,119 @@
 //! ```text
 //! cargo run -p vi-backend --example inventory -- [--no-agent] [--port N]
 //!     [--user U] [--identity PATH] [--known-hosts PATH] [--uri URI]
-//!     [--prefix "sudo -n"] [--xml DOMAIN] HOST
+//!     [--prefix "sudo -n"] [--xml DOMAIN] [--parallel N] [--save DIR] HOST
 //! ```
 //! Connects like `ssh-run`, runs only the allowlisted read-only virsh
 //! commands and prints the inventory. `--xml DOMAIN` also prints that
-//! domain's XML. Set `RUST_LOG=vi_backend=debug` to see each command.
+//! domain's XML. `--parallel N` sets how many domains are queried at once
+//! (default 4; compare with 1 to measure). `--save DIR` writes every virsh
+//! output in the fixture layout of `tests/fixtures/` (plus `domdisplay` for
+//! running domains). That output holds **real** names, addresses and paths:
+//! anonymise it with `scripts/anonymise_fixtures.py` before committing.
+//! Set `RUST_LOG=vi_backend=debug` to see each command.
 
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
-use vi_backend::LibvirtBackend;
+use vi_backend::{LibvirtBackend, VirshCommand};
 use vi_core::config::HostConfig;
 use vi_core::model::{Domain, HostInventory, human_bytes};
 use vi_ssh::prompt::BoxFuture;
-use vi_ssh::{ConnectOptions, HostKeyPrompt, Prompter, Secret, SshConfig, SshSession, resolve};
+use vi_ssh::{
+    CommandOutput, CommandRunner, ConnectOptions, HostKeyPrompt, Prompter, Secret, SshConfig,
+    SshError, SshSession, resolve,
+};
+
+/// Passes commands through and keeps every output (for `--save`).
+struct Recorder<'a> {
+    inner: &'a dyn CommandRunner,
+    log: Mutex<HashMap<String, CommandOutput>>,
+}
+
+impl CommandRunner for Recorder<'_> {
+    fn run<'a>(&'a self, command: &'a str) -> BoxFuture<'a, Result<CommandOutput, SshError>> {
+        Box::pin(async move {
+            let r = self.inner.run(command).await;
+            if let Ok(o) = &r {
+                self.log
+                    .lock()
+                    .expect("lock")
+                    .insert(command.to_string(), o.clone());
+            }
+            r
+        })
+    }
+}
+
+/// What virsh printed: stdout on success, else stderr (as in the fixtures).
+fn body(o: &CommandOutput) -> String {
+    if o.success() {
+        o.stdout_text()
+    } else {
+        o.stderr_text()
+    }
+}
+
+/// Write the recorded outputs in the fixture layout.
+async fn save(
+    dir: &Path,
+    backend: &LibvirtBackend,
+    session: &SshSession,
+    rec: &Recorder<'_>,
+    inv: &HostInventory,
+) -> std::io::Result<usize> {
+    let log = rec.log.lock().expect("lock").clone();
+    let mut n = 0;
+    let mut write = |path: PathBuf, cmd: &VirshCommand| -> std::io::Result<()> {
+        if let Some(o) = log.get(&backend.command_line(cmd)) {
+            std::fs::create_dir_all(path.parent().expect("parent"))?;
+            std::fs::write(&path, body(o))?;
+            n += 1;
+        }
+        Ok(())
+    };
+    write(dir.join("version.txt"), &VirshCommand::Version)?;
+    write(dir.join("list-all.txt"), &VirshCommand::ListAll)?;
+    for d in &inv.domains {
+        let vm = dir.join(&d.name);
+        write(
+            vm.join("dominfo.txt"),
+            &VirshCommand::DomInfo(d.name.clone()),
+        )?;
+        write(
+            vm.join("dumpxml.xml"),
+            &VirshCommand::DumpXml(d.name.clone()),
+        )?;
+        for disk in d.details.iter().flat_map(|x| &x.disks) {
+            if let Some(t) = &disk.target {
+                write(
+                    vm.join(format!("domblkinfo-{t}.txt")),
+                    &VirshCommand::DomBlkInfo {
+                        domain: d.name.clone(),
+                        target: t.clone(),
+                    },
+                )?;
+            }
+        }
+    }
+    // domdisplay is not part of the inventory; fetch it for running domains.
+    for d in inv.domains.iter().filter(|d| d.state.is_active()) {
+        match backend
+            .run_command(session, &VirshCommand::DomDisplay(d.name.clone()))
+            .await
+        {
+            Ok(o) => {
+                std::fs::create_dir_all(dir.join(&d.name))?;
+                std::fs::write(dir.join(&d.name).join("domdisplay.txt"), body(&o))?;
+                n += 1;
+            }
+            Err(e) => eprintln!("domdisplay {}: {e}", d.name),
+        }
+    }
+    Ok(n)
+}
 
 struct Terminal;
 
@@ -47,7 +146,7 @@ impl Prompter for Terminal {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: inventory [--no-agent] [--port N] [--user U] [--identity PATH] [--known-hosts PATH] [--uri URI] [--prefix PREFIX] [--xml DOMAIN] HOST"
+        "usage: inventory [--no-agent] [--port N] [--user U] [--identity PATH] [--known-hosts PATH] [--uri URI] [--prefix PREFIX] [--xml DOMAIN] [--parallel N] [--save DIR] HOST"
     );
     std::process::exit(2)
 }
@@ -197,6 +296,8 @@ async fn main() {
     let mut use_agent = true;
     let mut known_hosts: Option<PathBuf> = None;
     let mut xml_of: Option<String> = None;
+    let mut parallel = vi_backend::libvirt::DEFAULT_PARALLEL;
+    let mut save_dir: Option<PathBuf> = None;
     let mut host = None;
     while let Some(a) = args.next() {
         let mut val = || args.next().unwrap_or_else(|| usage());
@@ -209,6 +310,8 @@ async fn main() {
             "--uri" => cfg.libvirt_uri = val(),
             "--prefix" => cfg.virsh_prefix = Some(val()),
             "--xml" => xml_of = Some(val()),
+            "--parallel" => parallel = val().parse().unwrap_or_else(|_| usage()),
+            "--save" => save_dir = Some(PathBuf::from(val())),
             "-h" | "--help" => usage(),
             s if s.starts_with('-') || host.is_some() => usage(),
             _ => host = Some(a),
@@ -217,8 +320,14 @@ async fn main() {
     cfg.host = host.unwrap_or_else(|| usage());
     cfg.name = cfg.host.clone();
 
+    if let Some(d) = &save_dir
+        && d.read_dir().is_ok_and(|mut r| r.next().is_some())
+    {
+        eprintln!("error: {} exists and is not empty", d.display());
+        std::process::exit(2);
+    }
     let backend = match LibvirtBackend::from_host(&cfg) {
-        Ok(b) => b,
+        Ok(b) => b.with_parallel(parallel),
         Err(e) => {
             eprintln!("error: {e}");
             std::process::exit(2);
@@ -247,11 +356,24 @@ async fn main() {
         }
     };
     let started = std::time::Instant::now();
-    let result = backend.inventory(&session).await;
+    let rec = Recorder {
+        inner: &session,
+        log: Mutex::new(HashMap::new()),
+    };
+    let result = backend.inventory(&rec).await;
     let elapsed = started.elapsed();
     let code = match result {
         Ok(inv) => {
             print_inventory(&inv);
+            if let Some(dir) = &save_dir {
+                match save(dir, &backend, &session, &rec, &inv).await {
+                    Ok(n) => eprintln!(
+                        "saved {n} files to {}.\nThey contain REAL names, addresses and paths: run scripts/anonymise_fixtures.py before committing.",
+                        dir.display()
+                    ),
+                    Err(e) => eprintln!("error saving to {}: {e}", dir.display()),
+                }
+            }
             if let Some(name) = &xml_of {
                 match inv.domains.iter().find(|d| &d.name == name) {
                     Some(Domain {
@@ -260,7 +382,10 @@ async fn main() {
                     _ => eprintln!("no XML for domain {name:?}"),
                 }
             }
-            eprintln!("done in {:.1}s", elapsed.as_secs_f64());
+            eprintln!(
+                "done in {:.1}s ({parallel} domains at a time)",
+                elapsed.as_secs_f64()
+            );
             0
         }
         Err(e) => {

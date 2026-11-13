@@ -285,8 +285,11 @@ impl Graphics {
 pub enum Listen {
     /// TCP; address if known.
     Address(Option<String>),
-    /// Address from a libvirt network.
-    Network(Option<String>),
+    /// A libvirt network; `address` is the resolved address (live XML only).
+    Network {
+        network: Option<String>,
+        address: Option<String>,
+    },
     /// Unix socket path (if known).
     Socket(Option<String>),
     /// `listen type="none"`: not reachable remotely.
@@ -297,7 +300,14 @@ impl Listen {
     pub fn describe(&self) -> String {
         match self {
             Listen::Address(a) => a.clone().unwrap_or_else(|| "address (default)".into()),
-            Listen::Network(n) => format!("network {}", n.as_deref().unwrap_or("?")),
+            Listen::Network { network, address } => format!(
+                "network {}{}",
+                network.as_deref().unwrap_or("?"),
+                address
+                    .as_deref()
+                    .map(|a| format!(" ({a})"))
+                    .unwrap_or_default()
+            ),
             Listen::Socket(p) => format!("socket {}", p.as_deref().unwrap_or("(auto)")),
             Listen::None => "none (not reachable remotely)".into(),
         }

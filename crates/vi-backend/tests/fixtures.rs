@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use vi_backend::{
     BackendErrorKind, HypervisorBackend, LibvirtBackend, VirshCommand, domxml, parse,
@@ -163,6 +164,7 @@ fn bios_vm_components() {
     assert!(matches!(&d.disks[0].source, DiskSource::File(p) if p.ends_with("disk0.qcow2")));
     assert_eq!(d.disks[3].device, "cdrom");
     assert_eq!(d.disks[3].source, DiskSource::Empty);
+    assert_eq!(d.disks[3].source.describe(), "empty");
     assert!(d.disks[3].readonly);
     let nic = &d.interfaces[0];
     assert_eq!(nic.kind, "network");
@@ -361,4 +363,116 @@ async fn error_handling() {
     assert_eq!(inv.warnings.len(), 3, "{:?}", inv.warnings);
     assert!(inv.warnings[0].contains("\"gone\" disappeared"));
     assert!(inv.warnings[1].contains("\"bad\""));
+}
+
+/// A small host: `names` all running, each with one file disk `vda`.
+fn small_host(b: &LibvirtBackend, names: &[&str]) -> MockRunner {
+    let mut list = String::from(" Id   Name   State\n------------------\n");
+    let mut m = MockRunner::new().with(
+        &b.command_line(&VirshCommand::Version),
+        CommandOutput::ok("Using library: libvirt 10.0.0\n"),
+    );
+    for (i, n) in names.iter().enumerate() {
+        list.push_str(&format!(" {}    {n}   running\n", i + 1));
+        let xml = format!(
+            "<domain><name>{n}</name><devices><disk type='file' device='disk'><source file='/i/{n}.qcow2'/><target dev='vda'/></disk></devices></domain>"
+        );
+        m = m
+            .with(
+                &b.command_line(&VirshCommand::DomInfo(n.to_string())),
+                CommandOutput::ok("State: running\n"),
+            )
+            .with(
+                &b.command_line(&VirshCommand::DumpXml(n.to_string())),
+                CommandOutput::ok(xml),
+            )
+            .with(
+                &b.command_line(&VirshCommand::DomBlkInfo {
+                    domain: n.to_string(),
+                    target: "vda".into(),
+                }),
+                CommandOutput::ok("Capacity: 1024\n"),
+            );
+    }
+    m.with(
+        &b.command_line(&VirshCommand::ListAll),
+        CommandOutput::ok(list),
+    )
+}
+
+// TC-064: a hanging command only affects its domain or disk; a hang in a
+// host-level command fails the host.
+#[tokio::test(start_paused = true)]
+async fn timeouts_stay_per_domain() {
+    let b = backend().with_command_timeout(Duration::from_secs(5));
+    let hang = Duration::from_secs(60);
+    let m = small_host(&b, &["slowdisk", "slowxml", "fine"])
+        .with_delay(
+            &b.command_line(&VirshCommand::DomBlkInfo {
+                domain: "slowdisk".into(),
+                target: "vda".into(),
+            }),
+            hang,
+        )
+        .with_delay(
+            &b.command_line(&VirshCommand::DumpXml("slowxml".into())),
+            hang,
+        );
+    let inv = b.inventory(&m).await.expect("host must not fail");
+    assert_eq!(inv.domains.len(), 3);
+    let slowdisk = &inv.domains[0];
+    assert!(slowdisk.error.is_none());
+    assert_eq!(slowdisk.details.as_ref().unwrap().disks[0].size, None);
+    let slowxml = &inv.domains[1];
+    assert!(
+        slowxml.error.as_deref().unwrap().contains("timed out"),
+        "{slowxml:?}"
+    );
+    assert!(slowxml.details.is_none());
+    assert!(
+        inv.domains[2].details.as_ref().unwrap().disks[0]
+            .size
+            .is_some()
+    );
+    assert!(
+        inv.warnings
+            .iter()
+            .any(|w| w.contains("\"slowdisk\", disk vda: size unknown (timed out")),
+        "{:?}",
+        inv.warnings
+    );
+
+    let m = small_host(&b, &["a"]).with_delay(&b.command_line(&VirshCommand::Version), hang);
+    assert_eq!(
+        b.inventory(&m).await.unwrap_err().kind(),
+        BackendErrorKind::Timeout
+    );
+}
+
+// TC-065: domains are queried in parallel (bounded), results keep the list order.
+#[tokio::test(start_paused = true)]
+async fn domains_are_queried_in_parallel() {
+    let names = ["d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8"];
+    let run = |parallel: usize| async move {
+        let b = backend().with_parallel(parallel);
+        let mut m = small_host(&b, &names);
+        for n in names {
+            m = m.with_delay(
+                &b.command_line(&VirshCommand::DumpXml(n.into())),
+                Duration::from_secs(1),
+            );
+        }
+        let start = tokio::time::Instant::now();
+        let inv = b.inventory(&m).await.unwrap();
+        let order: Vec<String> = inv.domains.iter().map(|d| d.name.clone()).collect();
+        assert_eq!(order, names);
+        start.elapsed()
+    };
+    let four = run(4).await;
+    assert!(
+        four >= Duration::from_secs(2) && four < Duration::from_secs(3),
+        "{four:?}"
+    );
+    let one = run(1).await;
+    assert!(one >= Duration::from_secs(8), "{one:?}");
 }

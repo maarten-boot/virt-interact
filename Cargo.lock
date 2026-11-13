@@ -4785,6 +4785,7 @@ name = "vi-backend"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "futures-util",
  "roxmltree",
  "rpassword",
  "thiserror 2.0.21",

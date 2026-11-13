@@ -84,12 +84,16 @@ runs only the allowlisted read-only virsh commands and prints the inventory:
 ```sh
 cargo run -p vi-backend --example inventory -- [--no-agent] [--port N] [--user U] \
     [--identity PATH] [--known-hosts PATH] [--uri URI] [--prefix "sudo -n"] \
-    [--xml DOMAIN] HOST
+    [--xml DOMAIN] [--parallel N] [--save DIR] HOST
 ```
 
 Every command runs as `LC_ALL=C virsh -r -c '<uri>' ...` (read-only connection);
 the remote user needs read access to libvirt, e.g. membership of the `libvirt`
-group. Use `RUST_LOG=vi_backend=debug` to see each command.
+group. Use `RUST_LOG=vi_backend=debug` to see each command. `--parallel N`
+sets how many VMs are queried at once (default 4). `--save DIR` writes the
+raw virsh output in the fixture layout. It contains real names and
+addresses: anonymise it with `scripts/anonymise_fixtures.py` before
+committing (see `tests/fixtures/README.md`).
 
 ## Layout
 
@@ -100,6 +104,7 @@ group. Use `RUST_LOG=vi_backend=debug` to see each command.
 | `crates/vi-backend` | hypervisor backends (libvirt via virsh) |
 | `crates/vi-gui` | the `virt-interact` binary: GUI and theme |
 | `examples/` | example config and ssh config (kept valid by unit tests) |
+| `scripts/` | `anonymise_fixtures.py` for new virsh captures |
 | `tests/fixtures` | anonymised virsh output for parser tests |
 | `architecture/` | Spec, Plan, TestCases, conversation logs, crosschecks |
 | `Changes.md` | changes between releases |

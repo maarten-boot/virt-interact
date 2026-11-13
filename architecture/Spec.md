@@ -55,7 +55,7 @@ Each host has these fields:
 | `identity_file` | no | from ssh config / agent / default keys | Private key path. A leading `~` is expanded to the local home directory (`~user` is not). |
 | `backend` | no | `"libvirt"` | Virtualisation backend (SPEC-017) |
 | `libvirt_uri` | no | `"qemu:///system"` | URI passed to `virsh -c` |
-| `virsh_prefix` | no | none | Command prefix, e.g. `"sudo -n"` |
+| `virsh_prefix` | no | none | Command prefix, e.g. `"sudo -n"`; plain characters only (SPEC-011) |
 
 - Hosts can be added, edited and removed in the GUI. Changes are saved to the config file.
 - Host names must be unique and not empty; `host` must not be empty.
@@ -110,7 +110,7 @@ For each domain, the app shows:
   - Disk targets are not assumed to be contiguous (e.g. `vda`, `vdc`).
 - **Network interfaces:** type, source (network or bridge), MAC address, model.
 - **Graphics:** type (vnc, spice), listen type and address, port/tlsPort (live values for running domains).
-- **Other devices:** controllers, video, sound, hostdev, filesystem, channels. Shown as a summary list.
+- **Other devices:** all other device elements (controllers, video, sound, hostdev, filesystem, channels, input, serial, rng, …), each with a one-line summary (type and model; PCI/USB address or vendor:product for hostdev; source → target for filesystem; name for channels).
 - **Raw XML:** the full domain XML, read-only, with copy to clipboard.
 
 For running domains the live XML is used. For stopped domains the persistent definition is used.
@@ -131,6 +131,7 @@ Parsing is tolerant (see `tests/fixtures/`):
 ### SPEC-012: Refresh and concurrency (v1)
 - The user can refresh the inventory of one host or of all hosts.
 - Hosts are queried in parallel. A slow or failing host does not delay the others.
+- Within one host, up to 4 domains are queried at the same time, each on its own channel of the one SSH connection. Results keep the order of `virsh list`.
 - Each host shows its status: idle, connecting, refreshing, ok (with a timestamp), or error.
 - The connect timeout and the command timeout can be configured in `[ssh]` (`connect_timeout_secs`, `command_timeout_secs`; defaults 10 s and 30 s).
 - The connect timeout applies separately to the TCP connect, the SSH handshake and each authentication attempt. Time spent waiting for the user (host key question, passphrase) is not counted. The command timeout applies to each remote command; after a timeout the connection stays usable.
@@ -145,10 +146,11 @@ These errors are shown per host, in plain language, with the underlying detail a
 - XML parse error (with the domain name).
 
 Scope of an error:
-- SSH errors, `virsh` not found, permission denied and "cannot connect to the hypervisor" (from `virsh version` or `virsh list`, or from any later command) stop the refresh of that host.
+- SSH connection errors, `virsh` not found, permission denied and "cannot connect to the hypervisor" (from any command) stop the refresh of that host. A timeout of `virsh version` or `virsh list` also stops it.
 - A domain that disappears between `list` and a later command is left out, with a warning.
 - An XML parse error or another failing command for one domain is shown on that domain (with the detail); the other domains are still listed.
-- A failing `domblkinfo` only makes that disk's size "unknown".
+- A command timeout for one domain (`dominfo`, `dumpxml`) is shown on that domain; the others are still listed.
+- A failing `domblkinfo` only makes that disk's size "unknown"; if it timed out, a warning names the disk (e.g. a hanging network disk).
 
 ### SPEC-014: Inventory cache (v1)
 - The last successful inventory of each host is saved as JSON in the platform cache directory.
