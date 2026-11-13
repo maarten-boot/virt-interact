@@ -1,7 +1,7 @@
 # Test cases: virt-interact
 
 Each test case is traced to a Spec item.
-- **Type:** U = unit test, I = integration test with the mock runner, H = real-host test (only runs when `VIRT_INTERACT_TEST_HOST` is set), M = manual.
+- **Type:** U = unit test; I = integration test (mock runner, or the in-process SSH server in `crates/vi-ssh/tests/`); H = real-host test (manual with the `ssh-run` example, or automatic when `VIRT_INTERACT_TEST_HOST` is set); M = manual; CI = GitHub Actions run. Combinations such as `U/I` or `I/H` mean the case is covered at several levels.
 - **Status:** `planned`, `implemented` (automated test exists), `pass` or `fail` (as of the last crosscheck).
 
 ## SPEC-001: Colour and contrast
@@ -33,22 +33,28 @@ Each test case is traced to a Spec item.
 | TC-026 | U | `-h`/`--help` and `-V`/`--version` are recognised; `--config` without a value and unknown arguments are errors. | `vi-core paths::tests::bad_arguments` | pass (2026-11-13) |
 | TC-027 | U | The default path is `<config_dir>/virt-interact/config.toml` (Windows: `.../virt-interact/config/config.toml`). | `vi-core paths::tests::default_path_ends_with_app_and_file` | pass (2026-11-13) |
 | TC-028 | U | `examples/config.example.toml` and every TOML block in `README.md` parse; the example matches the documented values. | `vi-core config::tests::example_config_parses, readme_config_examples_parse` | pass (2026-11-13) |
+| TC-028a | U | `examples/ssh_config.example` parses without warnings and resolves as its comments say. | `vi-ssh sshconfig::tests::example_ssh_config` | pass (2026-11-13) |
 
 ## SPEC-006 / SPEC-007 / SPEC-008: SSH
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-030 | U | ssh config: `Host` wildcards (`*`, `?`, `!`), case-insensitive; first value wins; global options; quoting and `Key=Value`. | `vi-ssh sshconfig::tests::host_wildcards_and_first_value_wins, quoting_and_equals` | pass (2026-11-13) |
+| TC-030 | U | ssh config: `Host` wildcards (`*`, `?`, `!`), case-insensitive; first value wins; global options; quoting and `Key=Value`. | `vi-ssh sshconfig::tests::host_wildcards_and_first_value_wins, quoting_and_equals, missing_file_is_empty` | pass (2026-11-13) |
 | TC-031 | U | Precedence: app config > ssh config > defaults; `IdentityFile` tokens (`%d`, `%h`, ...) and default keys when none given. | `vi-ssh sshconfig::tests::precedence_app_over_sshconfig_over_defaults, identity_tokens` | pass (2026-11-13) |
 | TC-031a | U | `identity_file` with a leading `~` is expanded to the home directory; `~user`, absolute and relative paths are unchanged. | `vi-core config::tests::identity_file_tilde_expansion` | pass (2026-11-13) |
 | TC-032 | U | `ProxyJump`, `Include` and `Match` give a warning, not an error. | `vi-ssh sshconfig::tests::unsupported_keywords_warn` | pass (2026-11-13) |
-| TC-033 | U | known_hosts: plain entry, hashed entry (`\|1\|`, incl. lines hashed by OpenSSH `ssh-keygen -H`), `[host]:port`, patterns/negation, `@revoked`, bad lines skipped; mismatch refused without prompting; unknown host reported. | `vi-ssh known_hosts::tests::plain_entries, hashed_entries, patterns_markers_and_bad_lines, known_wins_over_mismatch_of_same_type`; `tests/session.rs::mismatched_host_key_is_refused` | pass (2026-11-13) |
+| TC-033 | U | known_hosts: plain entry, hashed entry (`\|1\|`, incl. lines hashed by OpenSSH `ssh-keygen -H`), `[host]:port`, patterns/negation, `@revoked`, bad lines skipped; mismatch refused without prompting; unknown host reported. | `vi-ssh known_hosts::tests::plain_entries, hashed_entries, patterns_markers_and_bad_lines, known_wins_over_mismatch_of_same_type, fingerprint_format`; `tests/session.rs::mismatched_host_key_is_refused` | pass (2026-11-13) |
+| TC-033b | U | User and system known_hosts are combined like OpenSSH: revoked anywhere refuses; the first file that knows the host decides. | `vi-ssh session::tests::combine_user_and_system_known_hosts` | pass (2026-11-13) |
+| TC-033c | I | A host known only in a system-wide known_hosts file connects without a prompt; the user's file is not written. | `tests/session.rs::system_known_hosts_is_used` | pass (2026-11-13) |
 | TC-034 | U/I | An accepted new host key is added to known_hosts (hashed, mode 0600, newline handling) and matches afterwards; a rejected key aborts and records nothing. | `vi-ssh known_hosts::tests::learn_appends_and_then_matches`; `tests/session.rs::unknown_host_is_learned_and_exec_works, rejected_host_key` | pass (2026-11-13) |
+| TC-034a | I | After the user accepts a key, a reconnect presenting a different key is refused with "changed between attempts". | `tests/session.rs::host_key_changed_between_attempts` | pass (2026-11-13) |
 | TC-035 | U | The auth plan is agent first, then key files; it has no password or keyboard-interactive step. | `vi-ssh session::tests::auth_plan_is_agent_then_key_files_only` | pass (2026-11-13) |
+| TC-035a | U | Agent keys matching a configured key file (`.pub`) are offered first; otherwise the agent order is kept. | `vi-ssh session::tests::agent_keys_matching_config_come_first` | pass (2026-11-13) |
 | TC-036 | I/H | Connect and run a command: in-process test server (CI) and, manually, a real host with agent auth (`cargo run -p vi-ssh --example ssh-run -- HOST virsh version`). | `tests/session.rs::unknown_host_is_learned_and_exec_works`; real host: `ssh-run` | in-process: pass (2026-11-13); real host: open |
 | TC-037 | I/H | Encrypted key file with passphrase works; a wrong passphrase gives an auth failure saying so. | `tests/session.rs::encrypted_key_with_passphrase`; real host: `ssh-run` | in-process: pass (2026-11-13); real host: open |
 | TC-038 | M | Windows: agent auth through the OpenSSH agent pipe and through Pageant. | `ssh-run` example on Windows | open |
 | TC-039 | U/I | Passphrases never appear in Debug/Display output or in log output at trace level. | `vi-ssh secret::tests::never_printed`; `tests/logging.rs::passphrase_not_logged` | pass (2026-11-13) |
 | TC-039a | I | Auth failure lists every key tried with the reason; RSA keys authenticate (rsa-sha2). | `tests/session.rs::auth_failure_lists_tried_keys, rsa_key_works` | pass (2026-11-13) |
+| TC-039b | I | When the server closes the connection after too many attempts, the auth error still lists the keys tried, plus a note. | `tests/session.rs::server_closing_during_auth_keeps_tried_list` | pass (2026-11-13) |
 
 ## SPEC-009 / SPEC-010: Inventory
 | ID | Type | Description | Test location | Status |
@@ -80,6 +86,7 @@ Each test case is traced to a Spec item.
 | TC-061 | U | Error classification from the stderr of: virsh not found, permission denied, connection refused. | _tbd_ | planned |
 | TC-061a | I | SSH errors are classified: connection refused → connection, command timeout → timeout (session stays usable), host key, authentication; exit status and stderr are returned. | `tests/session.rs::connection_refused, exit_status_stderr_and_timeout` | pass (2026-11-13) |
 | TC-062 | I | Status transitions: idle → connecting → refreshing → ok/error. | _tbd_ | planned |
+| TC-063 | U | `ConnectOptions::from_settings` takes the `[ssh]` timeouts from the config; defaults are 10 s / 30 s. | `vi-ssh session::tests::options_from_config_settings` | pass (2026-11-13) |
 
 ## SPEC-014: Cache
 | ID | Type | Description | Test location | Status |
@@ -101,6 +108,7 @@ Each test case is traced to a Spec item.
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
 | TC-090 | U | The GUI depends only on the `HypervisorBackend` trait. A dummy backend compiles and is listed. | _tbd_ | planned |
+| TC-091 | U | `MockRunner` returns canned output, gives exit 127 for unknown commands, and records every command. | `vi-ssh runner::tests::mock_runner_records_and_answers` | pass (2026-11-13) |
 
 ## SPEC-018: Remote viewing (v1.1)
 | ID | Type | Description | Test location | Status |

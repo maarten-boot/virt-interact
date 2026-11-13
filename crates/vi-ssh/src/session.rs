@@ -16,6 +16,7 @@ use russh::keys::{HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertific
 use russh::{ChannelMsg, Disconnect};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::timeout;
+use vi_core::config::SshSettings;
 
 use crate::error::SshError;
 use crate::known_hosts::{self, HostKeyStatus};
@@ -26,10 +27,14 @@ use crate::sshconfig::ResolvedHost;
 /// Options for [`SshSession::connect`].
 #[derive(Debug, Clone)]
 pub struct ConnectOptions {
+    /// Applies separately to the TCP connect, the handshake and each
+    /// authentication attempt; time waiting for the user is not counted.
     pub connect_timeout: Duration,
     pub command_timeout: Duration,
-    /// Path of the known_hosts file.
+    /// The user's known_hosts file (read and written).
     pub known_hosts: PathBuf,
+    /// System-wide known_hosts files (read only), checked after the user's.
+    pub global_known_hosts: Vec<PathBuf>,
     /// Try ssh-agent keys first (SPEC-006).
     pub use_agent: bool,
     /// Write newly accepted host keys in hashed form.
@@ -37,12 +42,19 @@ pub struct ConnectOptions {
 }
 
 impl ConnectOptions {
-    /// Defaults: 10 s / 30 s, `~/.ssh/known_hosts`, agent on, hashed.
+    /// Defaults: 10 s / 30 s, the platform's system known_hosts, agent on,
+    /// hashed entries.
     pub fn new(known_hosts: PathBuf) -> ConnectOptions {
+        ConnectOptions::from_settings(&SshSettings::default(), known_hosts)
+    }
+
+    /// Options with the timeouts from the config file (SPEC-012).
+    pub fn from_settings(s: &SshSettings, known_hosts: PathBuf) -> ConnectOptions {
         ConnectOptions {
-            connect_timeout: Duration::from_secs(10),
-            command_timeout: Duration::from_secs(30),
+            connect_timeout: Duration::from_secs(s.connect_timeout_secs),
+            command_timeout: Duration::from_secs(s.command_timeout_secs),
             known_hosts,
+            global_known_hosts: default_global_known_hosts(),
             use_agent: true,
             hash_known_hosts: true,
         }
@@ -51,6 +63,20 @@ impl ConnectOptions {
     /// `~/.ssh/known_hosts`, if there is a home directory.
     pub fn default_known_hosts() -> Option<PathBuf> {
         dirs::home_dir().map(|h| h.join(".ssh").join("known_hosts"))
+    }
+}
+
+/// The system-wide known_hosts files OpenSSH reads on this platform.
+pub fn default_global_known_hosts() -> Vec<PathBuf> {
+    if cfg!(windows) {
+        std::env::var_os("PROGRAMDATA")
+            .map(|p| vec![PathBuf::from(p).join("ssh").join("ssh_known_hosts")])
+            .unwrap_or_default()
+    } else {
+        vec![
+            PathBuf::from("/etc/ssh/ssh_known_hosts"),
+            PathBuf::from("/etc/ssh/ssh_known_hosts2"),
+        ]
     }
 }
 
@@ -73,8 +99,55 @@ pub fn auth_plan(host: &ResolvedHost, use_agent: bool) -> Vec<AuthStep> {
     plan
 }
 
+/// The `.pub` file next to a key file.
+fn pub_path(key_file: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.pub", key_file.display()))
+}
+
+/// Order agent keys so that those matching a configured key file (by its
+/// `.pub`) come first; otherwise keep the agent's order. This keeps a big
+/// agent from using up the server's `MaxAuthTries` before the right key.
+pub fn order_agent_keys(keys: Vec<PublicKey>, preferred: &[PublicKey]) -> Vec<PublicKey> {
+    let (mut first, rest): (Vec<_>, Vec<_>) = keys
+        .into_iter()
+        .partition(|k| preferred.iter().any(|p| p.key_data() == k.key_data()));
+    first.extend(rest);
+    first
+}
+
+/// Combine the user's and the system-wide known_hosts results, as OpenSSH
+/// does: revoked anywhere refuses; the first file that knows the host
+/// (match or mismatch) decides, the user's file first. Returns the status
+/// and the index of the file it came from (0 = user, 1.. = system).
+pub fn combine_status(results: &[HostKeyStatus]) -> (HostKeyStatus, usize) {
+    if let Some((i, s)) = results
+        .iter()
+        .enumerate()
+        .find(|(_, s)| matches!(s, HostKeyStatus::Revoked { .. }))
+    {
+        return (s.clone(), i);
+    }
+    for (i, s) in results.iter().enumerate() {
+        if matches!(s, HostKeyStatus::Known | HostKeyStatus::Mismatch { .. }) {
+            return (s.clone(), i);
+        }
+    }
+    let mut other = Vec::new();
+    for s in results {
+        if let HostKeyStatus::Unknown { other_types } = s {
+            for t in other_types {
+                if !other.contains(t) {
+                    other.push(t.clone());
+                }
+            }
+        }
+    }
+    (HostKeyStatus::Unknown { other_types: other }, 0)
+}
+
 struct Checker {
     known_hosts: PathBuf,
+    global_known_hosts: Vec<PathBuf>,
     hostname: String,
     port: u16,
     accepted: Option<PublicKey>,
@@ -91,22 +164,44 @@ impl client::Handler for Checker {
             PublicKeyOrCertificate::PublicKey { key, .. } => key,
             PublicKeyOrCertificate::Certificate(_) => return Err(SshError::HostCertificate),
         };
-        if let Some(a) = &self.accepted
-            && a.key_data() == key.key_data()
-        {
-            return Ok(true);
-        }
-        let (status, warnings) =
-            known_hosts::check_file(&self.known_hosts, &self.hostname, self.port, key).map_err(
-                |source| SshError::KnownHosts {
-                    path: self.known_hosts.clone(),
-                    source,
-                },
-            )?;
-        for w in warnings {
-            tracing::warn!("{}: {w}", self.known_hosts.display());
-        }
         let host = known_hosts::host_field(&self.hostname, self.port);
+        if let Some(a) = &self.accepted {
+            if a.key_data() == key.key_data() {
+                return Ok(true);
+            }
+            // The user accepted one key, and now another one is presented.
+            return Err(SshError::HostKeyChangedDuringConnect {
+                host,
+                fingerprint: known_hosts::fingerprint(key),
+            });
+        }
+        let mut files = vec![self.known_hosts.clone()];
+        files.extend(self.global_known_hosts.iter().cloned());
+        let mut results = Vec::new();
+        for (i, f) in files.iter().enumerate() {
+            match known_hosts::check_file(f, &self.hostname, self.port, key) {
+                Ok((status, warnings)) => {
+                    for w in warnings {
+                        tracing::warn!("{}: {w}", f.display());
+                    }
+                    results.push(status);
+                }
+                // The user's file must be readable; system files are optional.
+                Err(source) if i == 0 => {
+                    return Err(SshError::KnownHosts {
+                        path: f.clone(),
+                        source,
+                    });
+                }
+                Err(e) => {
+                    tracing::debug!("{}: {e}", f.display());
+                    results.push(HostKeyStatus::Unknown {
+                        other_types: Vec::new(),
+                    });
+                }
+            }
+        }
+        let (status, from) = combine_status(&results);
         match status {
             HostKeyStatus::Known => Ok(true),
             HostKeyStatus::Unknown { other_types } => Err(SshError::UnknownHostKey {
@@ -117,11 +212,37 @@ impl client::Handler for Checker {
                 host,
                 line,
                 fingerprint: known_hosts::fingerprint(key),
-                known_hosts: self.known_hosts.clone(),
+                known_hosts: files[from].clone(),
             }),
             HostKeyStatus::Revoked { line } => Err(SshError::HostKeyRevoked { host, line }),
         }
     }
+}
+
+/// State of one authentication run.
+struct AuthState {
+    user: String,
+    rsa_hash: Option<HashAlg>,
+    /// Human-readable list of what was tried and why it failed.
+    tried: Vec<String>,
+    /// Public keys already offered (agent or file).
+    tried_keys: Vec<PublicKey>,
+    /// Public keys of the configured key files (from their `.pub`).
+    preferred: Vec<PublicKey>,
+    /// Set when the server closed the connection during authentication.
+    closed: bool,
+}
+
+impl AuthState {
+    fn already_tried(&self, k: &PublicKey) -> bool {
+        self.tried_keys.iter().any(|t| t.key_data() == k.key_data())
+    }
+}
+
+/// Outcome of one authentication step.
+enum Attempt {
+    Success,
+    Failed,
 }
 
 /// An authenticated SSH connection.
@@ -182,12 +303,17 @@ impl SshSession {
                         &key,
                         opts.hash_known_hosts,
                     ) {
-                        Ok(()) => {
-                            tracing::info!(host = %host.name, fingerprint = %prompt.fingerprint, "host key added to {}", opts.known_hosts.display())
-                        }
-                        Err(e) => {
-                            tracing::warn!(host = %host.name, "could not record host key in {}: {e}; accepted for this session only", opts.known_hosts.display())
-                        }
+                        Ok(()) => tracing::info!(
+                            host = %host.name,
+                            fingerprint = %prompt.fingerprint,
+                            "host key added to {}",
+                            opts.known_hosts.display()
+                        ),
+                        Err(e) => tracing::warn!(
+                            host = %host.name,
+                            "could not record host key in {}: {e}; accepted for this connection only",
+                            opts.known_hosts.display()
+                        ),
                     }
                     accepted = Some(*key);
                 }
@@ -227,6 +353,7 @@ impl SshSession {
         });
         let checker = Checker {
             known_hosts: opts.known_hosts.clone(),
+            global_known_hosts: opts.global_known_hosts.clone(),
             hostname: host.hostname.clone(),
             port: host.port,
             accepted,
@@ -244,99 +371,99 @@ impl SshSession {
         opts: &ConnectOptions,
         prompter: &dyn Prompter,
     ) -> Result<(), SshError> {
-        let user = self.host.user.clone();
-        let mut tried: Vec<String> = Vec::new();
-        let mut tried_keys: Vec<PublicKey> = Vec::new();
-        let rsa_hash = self
-            .handle
-            .best_supported_rsa_hash()
-            .await
-            .ok()
-            .flatten()
-            .flatten();
+        let preferred = if self.host.identity_explicit {
+            self.host
+                .identity_files
+                .iter()
+                .filter_map(|f| russh::keys::load_public_key(pub_path(f)).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let mut st = AuthState {
+            user: self.host.user.clone(),
+            rsa_hash: self
+                .handle
+                .best_supported_rsa_hash()
+                .await
+                .ok()
+                .flatten()
+                .flatten(),
+            tried: Vec::new(),
+            tried_keys: Vec::new(),
+            preferred,
+            closed: false,
+        };
 
         for step in auth_plan(&self.host, opts.use_agent) {
-            let ok = match step {
-                AuthStep::Agent => {
-                    self.try_agent(&user, rsa_hash, opts, &mut tried, &mut tried_keys)
-                        .await?
-                }
+            let r = match step {
+                AuthStep::Agent => self.try_agent(&mut st, opts).await?,
                 AuthStep::KeyFile(path) => {
-                    self.try_key_file(
-                        &user,
-                        &path,
-                        rsa_hash,
-                        opts,
-                        prompter,
-                        &mut tried,
-                        &mut tried_keys,
-                    )
-                    .await?
+                    self.try_key_file(&mut st, &path, opts, prompter).await?
                 }
             };
-            if ok {
-                tracing::info!(host = %self.host.name, %user, "authenticated");
+            if let Attempt::Success = r {
+                tracing::info!(host = %self.host.name, user = %st.user, "authenticated");
                 return Ok(());
+            }
+            if st.closed {
+                st.tried.push(
+                    "server closed the connection (too many authentication attempts?)".into(),
+                );
+                break;
             }
         }
         Err(SshError::AuthFailed {
-            user,
+            user: st.user,
             host: self.host.hostname.clone(),
-            tried,
+            tried: st.tried,
         })
+    }
+
+    /// Record a failed attempt; notice when the server hung up.
+    fn record_failure(&self, st: &mut AuthState, label: String, err: Option<String>) {
+        match err {
+            Some(e) => st.tried.push(format!("{label}: {e}")),
+            None => st.tried.push(label),
+        }
+        if self.handle.is_closed() {
+            st.closed = true;
+        }
     }
 
     async fn try_agent(
         &mut self,
-        user: &str,
-        rsa_hash: Option<HashAlg>,
+        st: &mut AuthState,
         opts: &ConnectOptions,
-        tried: &mut Vec<String>,
-        tried_keys: &mut Vec<PublicKey>,
-    ) -> Result<bool, SshError> {
+    ) -> Result<Attempt, SshError> {
         #[cfg(unix)]
         {
             match AgentClient::connect_env().await {
-                Ok(agent) => {
-                    return self
-                        .agent_keys(agent, user, rsa_hash, opts, tried, tried_keys)
-                        .await;
-                }
+                Ok(agent) => return self.agent_keys(st, agent, opts).await,
                 Err(e) => tracing::debug!("no ssh-agent: {e}"),
             }
         }
         #[cfg(windows)]
         {
             match AgentClient::connect_named_pipe(r"\\.\pipe\openssh-ssh-agent").await {
-                Ok(agent) => {
-                    return self
-                        .agent_keys(agent, user, rsa_hash, opts, tried, tried_keys)
-                        .await;
-                }
+                Ok(agent) => return self.agent_keys(st, agent, opts).await,
                 Err(e) => tracing::debug!("no OpenSSH agent pipe: {e}"),
             }
             match AgentClient::connect_pageant().await {
-                Ok(agent) => {
-                    return self
-                        .agent_keys(agent, user, rsa_hash, opts, tried, tried_keys)
-                        .await;
-                }
+                Ok(agent) => return self.agent_keys(st, agent, opts).await,
                 Err(e) => tracing::debug!("no Pageant: {e}"),
             }
         }
-        let _ = (user, rsa_hash, opts, tried, tried_keys);
-        Ok(false)
+        let _ = (st, opts);
+        Ok(Attempt::Failed)
     }
 
     async fn agent_keys<S>(
         &mut self,
+        st: &mut AuthState,
         mut agent: AgentClient<S>,
-        user: &str,
-        rsa_hash: Option<HashAlg>,
         opts: &ConnectOptions,
-        tried: &mut Vec<String>,
-        tried_keys: &mut Vec<PublicKey>,
-    ) -> Result<bool, SshError>
+    ) -> Result<Attempt, SshError>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
@@ -344,18 +471,26 @@ impl SshSession {
             Ok(ids) => ids,
             Err(e) => {
                 tracing::warn!("ssh-agent: cannot list keys: {e}");
-                return Ok(false);
+                return Ok(Attempt::Failed);
             }
         };
-        for id in ids {
-            let key = id.public_key().into_owned();
-            let label = format!(
-                "agent key {} ({})",
-                id.comment(),
-                known_hosts::fingerprint(&key)
-            );
+        let labelled: Vec<(PublicKey, String)> = ids
+            .iter()
+            .map(|id| (id.public_key().into_owned(), id.comment().to_string()))
+            .collect();
+        let keys = order_agent_keys(
+            labelled.iter().map(|(k, _)| k.clone()).collect(),
+            &st.preferred,
+        );
+        for key in keys {
+            let comment = labelled
+                .iter()
+                .find(|(k, _)| k.key_data() == key.key_data())
+                .map(|(_, c)| c.as_str())
+                .unwrap_or_default();
+            let label = format!("agent key {comment} ({})", known_hosts::fingerprint(&key));
             let hash = if key.algorithm().is_rsa() {
-                rsa_hash
+                st.rsa_hash
             } else {
                 None
             };
@@ -363,42 +498,40 @@ impl SshSession {
                 opts.connect_timeout,
                 "authenticating",
                 self.handle
-                    .authenticate_publickey_with(user, key.clone(), hash, &mut agent),
+                    .authenticate_publickey_with(&st.user, key.clone(), hash, &mut agent),
             )
             .await?;
-            tried_keys.push(key);
+            st.tried_keys.push(key);
             match r {
-                Ok(res) if res.success() => return Ok(true),
-                Ok(_) => tried.push(label),
-                Err(e) => tried.push(format!("{label}: {e}")),
+                Ok(res) if res.success() => return Ok(Attempt::Success),
+                Ok(_) => self.record_failure(st, label, None),
+                Err(e) => self.record_failure(st, label, Some(e.to_string())),
+            }
+            if st.closed {
+                break;
             }
         }
-        Ok(false)
+        Ok(Attempt::Failed)
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn try_key_file(
         &mut self,
-        user: &str,
+        st: &mut AuthState,
         path: &Path,
-        rsa_hash: Option<HashAlg>,
         opts: &ConnectOptions,
         prompter: &dyn Prompter,
-        tried: &mut Vec<String>,
-        tried_keys: &mut Vec<PublicKey>,
-    ) -> Result<bool, SshError> {
+    ) -> Result<Attempt, SshError> {
         if !path.exists() {
             if self.host.identity_explicit {
-                tried.push(format!("{} (not found)", path.display()));
+                st.tried.push(format!("{} (not found)", path.display()));
             }
-            return Ok(false);
+            return Ok(Attempt::Failed);
         }
         // Skip a key the agent already offered, without asking for its passphrase.
-        let pub_path = PathBuf::from(format!("{}.pub", path.display()));
-        if let Ok(pk) = russh::keys::load_public_key(&pub_path)
-            && tried_keys.iter().any(|k| k.key_data() == pk.key_data())
+        if let Ok(pk) = russh::keys::load_public_key(pub_path(path))
+            && st.already_tried(&pk)
         {
-            return Ok(false);
+            return Ok(Attempt::Failed);
         }
         let key = match russh::keys::load_secret_key(path, None) {
             Ok(k) => k,
@@ -406,29 +539,31 @@ impl SshSession {
                 Some(pass) => match russh::keys::load_secret_key(path, Some(pass.expose())) {
                     Ok(k) => k,
                     Err(_) => {
-                        tried.push(format!("{} (wrong passphrase)", path.display()));
-                        return Ok(false);
+                        st.tried
+                            .push(format!("{} (wrong passphrase)", path.display()));
+                        return Ok(Attempt::Failed);
                     }
                 },
                 None => {
-                    tried.push(format!(
+                    st.tried.push(format!(
                         "{} (encrypted, no passphrase given)",
                         path.display()
                     ));
-                    return Ok(false);
+                    return Ok(Attempt::Failed);
                 }
             },
             Err(e) => {
-                tried.push(format!("{} (cannot read: {e})", path.display()));
-                return Ok(false);
+                st.tried
+                    .push(format!("{} (cannot read: {e})", path.display()));
+                return Ok(Attempt::Failed);
             }
         };
         let public = key.public_key().clone();
-        if tried_keys.iter().any(|k| k.key_data() == public.key_data()) {
-            return Ok(false);
+        if st.already_tried(&public) {
+            return Ok(Attempt::Failed);
         }
         let hash = if key.algorithm().is_rsa() {
-            rsa_hash
+            st.rsa_hash
         } else {
             None
         };
@@ -436,15 +571,23 @@ impl SshSession {
             opts.connect_timeout,
             "authenticating",
             self.handle
-                .authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key), hash)),
+                .authenticate_publickey(&st.user, PrivateKeyWithHashAlg::new(Arc::new(key), hash)),
         )
-        .await??;
-        tried_keys.push(public);
-        if r.success() {
-            Ok(true)
-        } else {
-            tried.push(path.display().to_string());
-            Ok(false)
+        .await?;
+        st.tried_keys.push(public);
+        let label = path.display().to_string();
+        match r {
+            Ok(res) if res.success() => Ok(Attempt::Success),
+            Ok(_) => {
+                self.record_failure(st, label, None);
+                Ok(Attempt::Failed)
+            }
+            // C1: a protocol error (e.g. the server hung up) is recorded,
+            // not turned into a generic error.
+            Err(e) => {
+                self.record_failure(st, label, Some(e.to_string()));
+                Ok(Attempt::Failed)
+            }
         }
     }
 
@@ -499,6 +642,11 @@ impl CommandRunner for SshSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use russh::keys::parse_public_key_base64;
+
+    // server_ed25519 and other_ed25519 from tests/fixtures/ssh
+    const ED_A: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIPppDA0rOSaOEHE++x1T7TWMnNGwBKOxH5dp0HYliXdT";
+    const ED_B: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIB66dIvD+ro2JT6TNDRKOARojl+A52Vp4TDh8NwJp9p3";
 
     fn host(files: Vec<&str>) -> ResolvedHost {
         ResolvedHost {
@@ -532,5 +680,75 @@ mod tests {
                 AuthStep::Agent | AuthStep::KeyFile(_) => {}
             }
         }
+    }
+
+    // TC-035a
+    #[test]
+    fn agent_keys_matching_config_come_first() {
+        let a = parse_public_key_base64(ED_A).unwrap();
+        let b = parse_public_key_base64(ED_B).unwrap();
+        let ordered = order_agent_keys(vec![a.clone(), b.clone()], std::slice::from_ref(&b));
+        assert_eq!(ordered, vec![b.clone(), a.clone()]);
+        let ordered = order_agent_keys(vec![a.clone(), b.clone()], &[]);
+        assert_eq!(ordered, vec![a, b]);
+    }
+
+    // TC-033b
+    #[test]
+    fn combine_user_and_system_known_hosts() {
+        let unknown = HostKeyStatus::Unknown {
+            other_types: vec![],
+        };
+        let c = |v: Vec<HostKeyStatus>| combine_status(&v);
+        assert_eq!(
+            c(vec![HostKeyStatus::Known, unknown.clone()]),
+            (HostKeyStatus::Known, 0)
+        );
+        assert_eq!(
+            c(vec![unknown.clone(), HostKeyStatus::Known]),
+            (HostKeyStatus::Known, 1)
+        );
+        // The user's file decides when it knows the host.
+        assert_eq!(
+            c(vec![
+                HostKeyStatus::Known,
+                HostKeyStatus::Mismatch { line: 3 }
+            ]),
+            (HostKeyStatus::Known, 0)
+        );
+        assert_eq!(
+            c(vec![unknown.clone(), HostKeyStatus::Mismatch { line: 3 }]),
+            (HostKeyStatus::Mismatch { line: 3 }, 1)
+        );
+        // Revoked anywhere refuses.
+        assert_eq!(
+            c(vec![
+                HostKeyStatus::Known,
+                HostKeyStatus::Revoked { line: 1 }
+            ]),
+            (HostKeyStatus::Revoked { line: 1 }, 1)
+        );
+        let rsa = HostKeyStatus::Unknown {
+            other_types: vec!["ssh-rsa".into()],
+        };
+        assert_eq!(c(vec![rsa.clone(), unknown]), (rsa, 0));
+    }
+
+    // TC-063
+    #[test]
+    fn options_from_config_settings() {
+        let s = SshSettings {
+            connect_timeout_secs: 3,
+            command_timeout_secs: 45,
+        };
+        let o = ConnectOptions::from_settings(&s, PathBuf::from("/kh"));
+        assert_eq!(o.connect_timeout, Duration::from_secs(3));
+        assert_eq!(o.command_timeout, Duration::from_secs(45));
+        assert_eq!(o.known_hosts, PathBuf::from("/kh"));
+        assert!(o.use_agent && o.hash_known_hosts);
+        let d = ConnectOptions::new(PathBuf::from("/kh"));
+        assert_eq!(d.connect_timeout, Duration::from_secs(10));
+        assert_eq!(d.command_timeout, Duration::from_secs(30));
+        assert_eq!(d.global_known_hosts, default_global_known_hosts());
     }
 }

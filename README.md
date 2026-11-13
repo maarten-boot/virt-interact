@@ -5,8 +5,9 @@ A desktop GUI (Windows, Linux, macOS) that connects to remote hosts over SSH
 (libvirt/virsh first). Remote VNC/SPICE viewing over the same SSH connection
 follows in v1.1.
 
-Status: phase 2 done (config, contrast/theme, logging, SSH layer). The
-inventory and the host/VM views follow in phases 3–4. See `architecture/Spec.md` and
+Status: phase 2 done (config, contrast/theme, logging, SSH layer), except the
+manual checks on a real host and on Windows. The inventory and the host/VM
+views follow in phases 3–4. See `architecture/Spec.md` and
 `architecture/Plan.md`; changes per release are in `Changes.md`.
 
 ## Build
@@ -44,7 +45,9 @@ The config file is TOML. Default location:
 | macOS | `~/Library/Application Support/virt-interact/config.toml` |
 
 A missing file means defaults; it is created on the first save. A complete,
-commented example is in [`examples/config.example.toml`](examples/config.example.toml).
+commented example is in [`examples/config.example.toml`](examples/config.example.toml);
+the supported part of `~/.ssh/config` is shown in
+[`examples/ssh_config.example`](examples/ssh_config.example).
 A minimal one:
 
 ```toml
@@ -81,7 +84,7 @@ Use `RUST_LOG=vi_ssh=debug` to see each step. `tests/fixtures/ssh/` holds
 | `crates/vi-ssh` | `~/.ssh/config` parsing, SSH sessions, auth, known_hosts, command runner, tunnels |
 | `crates/vi-backend` | hypervisor backends (libvirt via virsh) |
 | `crates/vi-gui` | the `virt-interact` binary: GUI and theme |
-| `examples/` | example config (kept valid by a unit test) |
+| `examples/` | example config and ssh config (kept valid by unit tests) |
 | `tests/fixtures` | anonymised virsh output for parser tests |
 | `architecture/` | Spec, Plan, TestCases, conversation logs, crosschecks |
 | `Changes.md` | changes between releases |

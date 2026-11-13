@@ -90,11 +90,21 @@ impl server::Handler for TestServer {
 
 /// Start a server accepting `allowed` client keys; returns its port.
 pub async fn start_server(allowed: Vec<PublicKey>) -> u16 {
-    let key = russh::keys::load_secret_key(fixture("server_ed25519"), None).unwrap();
+    start_server_with("server_ed25519", allowed, 10).await
+}
+
+/// Start a server with the given host key file and auth attempt limit.
+pub async fn start_server_with(
+    host_key: &str,
+    allowed: Vec<PublicKey>,
+    max_auth_attempts: usize,
+) -> u16 {
+    let key = russh::keys::load_secret_key(fixture(host_key), None).unwrap();
     let config = Arc::new(server::Config {
         keys: vec![key],
         auth_rejection_time: Duration::from_millis(10),
         auth_rejection_time_initial: Some(Duration::ZERO),
+        max_auth_attempts,
         ..Default::default()
     });
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -108,6 +118,26 @@ pub async fn start_server(allowed: Vec<PublicKey>) -> u16 {
             tokio::spawn(async move {
                 if let Ok(s) = server::run_stream(cfg, sock, h).await {
                     let _ = s.await;
+                }
+            });
+        }
+    });
+    port
+}
+
+/// A TCP proxy that sends connection N to `targets[min(N, last)]`.
+/// Used to present a different host key on the second connection.
+pub async fn start_switching_proxy(targets: Vec<u16>) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let mut n = 0usize;
+        while let Ok((mut inbound, _)) = listener.accept().await {
+            let target = targets[n.min(targets.len() - 1)];
+            n += 1;
+            tokio::spawn(async move {
+                if let Ok(mut out) = tokio::net::TcpStream::connect(("127.0.0.1", target)).await {
+                    let _ = tokio::io::copy_bidirectional(&mut inbound, &mut out).await;
                 }
             });
         }

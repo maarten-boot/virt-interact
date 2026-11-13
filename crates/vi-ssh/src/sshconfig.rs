@@ -518,8 +518,16 @@ Host *
         assert!(r.warnings.is_empty());
         let r = resolve(&HostConfig::new("w", "web.example.lan"), &c, "me", &home());
         assert_eq!((r.user.as_str(), r.port), ("admin", 22));
-        assert_eq!(r.identity_files, vec![home().join(".ssh/id_web.example.lan")]);
-        let r = resolve(&HostConfig::new("l", "legacy.example.lan"), &c, "me", &home());
+        assert_eq!(
+            r.identity_files,
+            vec![home().join(".ssh/id_web.example.lan")]
+        );
+        let r = resolve(
+            &HostConfig::new("l", "legacy.example.lan"),
+            &c,
+            "me",
+            &home(),
+        );
         assert_eq!(r.user, "me");
         assert!(!r.identity_explicit);
     }

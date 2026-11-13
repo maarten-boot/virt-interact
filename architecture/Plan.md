@@ -48,6 +48,7 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
   - Source review: russh 0.65 has `AgentClient::connect_named_pipe` (OpenSSH agent, `\\.\pipe\openssh-ssh-agent`) and `connect_pageant`; both are used (pipe first). No workaround needed.
   - Still open: compile check in CI (Windows code is behind `cfg(windows)`) and a manual run on Windows (TC-038) with `cargo run -p vi-ssh --example ssh-run`.
 - [x] 2.6 Integration tests against an in-process russh server (`vi-ssh/tests/`), and the `ssh-run` example for manual tests on real hosts.
+- [x] 2.8 Crosscheck 2026-11-13-02 fixes: auth errors keep the tried list (server hang-up), clear error for a host key change between attempts, `ConnectOptions::from_settings`, `AuthState`, agent keys matching configured files first, system-wide known_hosts.
 - [ ] 2.7 Manual check against a real OpenSSH server and ssh-agent (TC-036/037 on a real host). Starting a local `sshd` from the assistant session was not permitted; to be run by the user.
 
 ### Phase 3: libvirt backend (SPEC-009, 010, 011, 013, 017)
@@ -84,7 +85,7 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 ## Risks
 | Risk | Mitigation |
 |------|-----------|
-| russh agent support on Windows (named pipe / Pageant) | Spike in 2.5. Fallback: key files with a passphrase prompt. |
+| russh agent support on Windows (named pipe / Pageant) | Source review (2.5): russh supports both, and both are used. Open: first compile in CI (Windows code is behind `cfg(windows)`) and a manual run (TC-038). Fallback: key files with a passphrase prompt. |
 | virsh output and XML differ between libvirt versions | Fixtures from several versions; tolerant parser (unknown elements are ignored, not fatal). |
 | `qemu:///system` permissions | Clear error message with a hint (SPEC-013); `virsh_prefix = "sudo -n"` option. |
 | macOS signing and notarization | Postpone to 5.1; an unsigned build is fine for development. |

@@ -66,10 +66,12 @@ Each host has these fields:
 ### SPEC-006: Key-based authentication only (v1)
 - Authentication methods, in this order:
   1. ssh-agent: `SSH_AUTH_SOCK` on Linux/macOS; on Windows, the OpenSSH agent named pipe, with Pageant as a fallback.
-  2. The configured `identity_file`.
-  3. Default keys: `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa`.
+  2. Configured key files: the app's `identity_file` first, then the ssh config `IdentityFile`s.
+  3. Only if no key file is configured (app or ssh config): the default keys `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa` (those that exist).
+- Agent keys that match a configured key file (recognised by its `.pub`) are offered first, so an agent with many keys does not use up the server's `MaxAuthTries` before the right key.
+- If the server closes the connection during authentication (e.g. too many attempts), the error still lists the keys tried, with a note that the server hung up.
 - Password authentication and keyboard-interactive authentication are never used.
-- If a key file is encrypted, the GUI asks for its passphrase. The passphrase is kept in memory for the session only and is never written to disk or to logs.
+- If a key file is encrypted, the GUI asks for its passphrase. The SSH layer uses it for one connection attempt and then wipes it; the GUI may keep it in memory while the app runs so a reconnect does not ask again (Plan 4.3). It is never written to disk or to logs.
 - SSH is implemented with `russh` (crypto backend `ring`, so no C toolchain/cmake is needed on Windows). There is no dependency on an external `ssh` binary.
 - A key that the agent already offered is not tried again from its file, so its passphrase is not asked for needlessly (the `.pub` next to the key file is used to recognise it).
 - RSA keys use `rsa-sha2-512`/`-256` signatures when the server supports them.
@@ -83,10 +85,12 @@ Each host has these fields:
 - `ProxyJump`, `ProxyCommand`, `Include` and `Match` blocks are not supported in v1. If they apply to a host, a warning is shown (the options inside `Match` blocks are ignored). Other keywords are ignored silently.
 
 ### SPEC-008: Host key verification (v1)
-- The server host key is checked against `~/.ssh/known_hosts`. Both hashed and plain entries are supported.
+- The server host key is checked against `~/.ssh/known_hosts` and then the system-wide files (read only): `/etc/ssh/ssh_known_hosts` and `/etc/ssh/ssh_known_hosts2` on Linux/macOS, `%PROGRAMDATA%\ssh\ssh_known_hosts` on Windows. Both hashed and plain entries are supported.
+- As in OpenSSH: `@revoked` in any file refuses the key; otherwise the first file that knows the host (match or mismatch), the user's file first, decides. New keys are only written to the user's file.
+- The name looked up and written is the resolved host name (`HostName` from the ssh config, else the configured `host`), as `[name]:port` for ports other than 22 (like OpenSSH without `HostKeyAlias`).
 - Host patterns (`*`, `?`, `!`), `[host]:port` for non-22 ports, `@revoked` (the key is refused) are supported. `@cert-authority` lines are ignored: host certificates are not supported and are refused. Unreadable lines are skipped with a warning.
 - If the host is unknown, the app shows the key type and SHA256 fingerprint (and, if present, which other key types are recorded for the host). The user can accept (the key is added to `known_hosts`) or reject (the connection is aborted). The question is asked outside any network timeout: the handshake stops at the unknown key, and after acceptance the app reconnects.
-- New entries are written hashed (`|1|...`, like OpenSSH `HashKnownHosts yes`); the file is created with mode 0600 on Unix. If the file cannot be written, the key is accepted for this connection only, with a warning.
+- New entries are written hashed (`|1|...`, like OpenSSH `HashKnownHosts yes`); the file is created with mode 0600 on Unix. If the file cannot be written, the key is accepted for this connection only, with a warning. If the reconnect after acceptance presents a different key, the connection is refused ("host key changed between attempts").
 - If the key does not match the stored key, the connection is refused with a prominent warning. There is no override in the GUI.
 
 ## 5. Inventory
@@ -124,7 +128,8 @@ Parsing is tolerant (see `tests/fixtures/`):
 - The user can refresh the inventory of one host or of all hosts.
 - Hosts are queried in parallel. A slow or failing host does not delay the others.
 - Each host shows its status: idle, connecting, refreshing, ok (with a timestamp), or error.
-- The connect timeout and the command timeout can be configured (defaults: 10 s and 30 s).
+- The connect timeout and the command timeout can be configured in `[ssh]` (`connect_timeout_secs`, `command_timeout_secs`; defaults 10 s and 30 s).
+- The connect timeout applies separately to the TCP connect, the SSH handshake and each authentication attempt. Time spent waiting for the user (host key question, passphrase) is not counted. The command timeout applies to each remote command; after a timeout the connection stays usable.
 
 ### SPEC-013: Error reporting (v1)
 These errors are shown per host, in plain language, with the underlying detail available. The SSH layer groups them as connection, timeout, host key, authentication and other:

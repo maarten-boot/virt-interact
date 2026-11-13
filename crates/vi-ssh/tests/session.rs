@@ -5,7 +5,9 @@ mod common;
 
 use std::time::Duration;
 
-use common::{PASSPHRASE, fixture, host, opts, pubkey, start_server};
+use common::{
+    PASSPHRASE, fixture, host, opts, pubkey, start_server, start_server_with, start_switching_proxy,
+};
 use tokio::net::TcpListener;
 use vi_ssh::known_hosts;
 use vi_ssh::{CommandRunner, NoPrompt, ScriptedPrompter, SshError, SshErrorKind, SshSession};
@@ -192,4 +194,68 @@ async fn connection_refused() {
         .err()
         .unwrap();
     assert_eq!(err.kind(), SshErrorKind::Connection, "{err}");
+}
+
+// C1 / TC-039b: the server hangs up after too many attempts → AuthFailed
+// with the keys tried and a note, not a generic protocol error.
+#[tokio::test]
+async fn server_closing_during_auth_keeps_tried_list() {
+    let port = start_server_with("server_ed25519", vec![pubkey("client_rsa")], 1).await;
+    let dir = tempfile::tempdir().unwrap();
+    let h = host(port, &["client_ed25519", "other_ed25519", "client_rsa"]);
+    let err = SshSession::connect(h, &opts(&dir), &ScriptedPrompter::new(true, None))
+        .await
+        .err()
+        .unwrap();
+    match err {
+        SshError::AuthFailed { tried, .. } => {
+            assert!(tried[0].contains("client_ed25519"), "{tried:?}");
+            assert!(
+                tried.last().unwrap().contains("closed the connection"),
+                "{tried:?}"
+            );
+        }
+        e => panic!("expected AuthFailed, got {e}"),
+    }
+}
+
+// C2 / TC-034a: the user accepts the key of the first connection; the
+// reconnect presents another key → clear "changed between attempts" error.
+#[tokio::test]
+async fn host_key_changed_between_attempts() {
+    let a = start_server_with("server_ed25519", vec![pubkey("client_ed25519")], 10).await;
+    let b = start_server_with("other_ed25519", vec![pubkey("client_ed25519")], 10).await;
+    let proxy = start_switching_proxy(vec![a, b]).await;
+    let dir = tempfile::tempdir().unwrap();
+    let p = ScriptedPrompter::new(true, None);
+    let err = SshSession::connect(host(proxy, &["client_ed25519"]), &opts(&dir), &p)
+        .await
+        .err()
+        .unwrap();
+    assert!(
+        matches!(err, SshError::HostKeyChangedDuringConnect { .. }),
+        "{err}"
+    );
+    assert!(err.to_string().contains("changed between"));
+    assert_eq!(err.kind(), SshErrorKind::HostKey);
+    assert_eq!(p.host_key_prompts.lock().unwrap().len(), 1);
+}
+
+// Suggestion 4 / TC-033c: a host known only in a system-wide known_hosts file
+// connects without a prompt; nothing is written to the user's file.
+#[tokio::test]
+async fn system_known_hosts_is_used() {
+    let port = start_server(vec![pubkey("client_ed25519")]).await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut o = opts(&dir);
+    let global = dir.path().join("ssh_known_hosts");
+    known_hosts::learn(&global, "127.0.0.1", port, &pubkey("server_ed25519"), false).unwrap();
+    o.global_known_hosts = vec![dir.path().join("missing_global"), global];
+    let p = ScriptedPrompter::new(false, None);
+    let s = SshSession::connect(host(port, &["client_ed25519"]), &o, &p)
+        .await
+        .unwrap();
+    assert!(s.exec("echo hello").await.unwrap().success());
+    assert!(p.host_key_prompts.lock().unwrap().is_empty());
+    assert!(!o.known_hosts.exists());
 }

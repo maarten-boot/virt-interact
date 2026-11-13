@@ -33,6 +33,12 @@ pub enum SshError {
     )]
     HostKeyRevoked { host: String, line: usize },
 
+    #[error(
+        "the host key of {host} changed between the first and second connection attempt \
+         (now {fingerprint}). Connection refused."
+    )]
+    HostKeyChangedDuringConnect { host: String, fingerprint: String },
+
     #[error("the host key of {host} ({fingerprint}) was not accepted")]
     HostKeyRejected { host: String, fingerprint: String },
 
@@ -85,6 +91,7 @@ impl SshError {
             SshError::HostKeyMismatch { .. }
             | SshError::HostKeyRevoked { .. }
             | SshError::HostKeyRejected { .. }
+            | SshError::HostKeyChangedDuringConnect { .. }
             | SshError::UnknownHostKey { .. }
             | SshError::HostCertificate
             | SshError::KnownHosts { .. } => SshErrorKind::HostKey,

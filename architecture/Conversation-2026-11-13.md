@@ -93,3 +93,7 @@ Starting a local `sshd` and `ssh-agent` for a check against real OpenSSH was blo
 - The TestCases legend and a few untraced tests need fixing (T1, T2).
 
 Added `examples/ssh_config.example` plus a test. Everything else is waiting for the user's OK.
+
+**User:** Apply all fixes including improvements 2–4. The user created the GitHub repo `git@github.com:maarten-boot/virt-interact.git`.
+
+**Claude:** Applied C1–C3, S1–S6, E2, T1–T2 and improvements 2–4 (details in Crosscheck-2026-11-13-02 §8). New tests: TC-028a, TC-033b/c, TC-034a, TC-035a, TC-039b, TC-063, TC-091. 59 tests pass. Added `origin` as a remote; the push waits for the user's confirmation.
