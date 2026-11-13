@@ -109,3 +109,8 @@ Added `examples/ssh_config.example` plus a test. Everything else is waiting for 
 **User:** Pushed the clippy fix. (The session watching CI ended before the run finished.)
 
 **Claude:** Run 43443728652: Linux, macOS (including the x86_64 cross build) and MSRV 1.92 pass. Windows failed in Test: `readme_config_examples_parse` found no "```toml\n" because the Windows runner checks out with CRLF. Because `cargo test` stops at the first failing test binary, the vi-ssh tests have not run on Windows yet. Fixes: the test normalises CRLF; `.gitattributes` (`* text=auto eol=lf`) keeps fixtures byte-identical on all platforms; CI runs tests with `--no-fail-fast`. Committed locally; to be pushed by the user.
+
+## 12. Third CI run
+**User:** Pushed the CRLF fix.
+
+**Claude:** Run 43509629083: all four jobs pass (Windows, Linux, macOS stable; MSRV 1.92). On Windows all 59 tests pass, including the vi-ssh integration tests against the in-process SSH server, which ran there for the first time. TC-010 is now passing; Plan 2.5 and the risks row are updated. Still open: the manual checks (TC-038 on Windows, TC-036/037 on a real host, TC-006, TC-011 on Windows/macOS).
