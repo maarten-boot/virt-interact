@@ -101,10 +101,10 @@ Each host has these fields:
 
 ### SPEC-010: Machine components (v1)
 For each domain, the app shows:
-- **General:** OS type, architecture, machine type, firmware (BIOS or UEFI), guest OS (from the libosinfo metadata `os id`, if present; an unknown ID is shown as is), description and title if set.
+- **General:** hypervisor type (e.g. kvm), OS type, architecture, machine type, firmware (UEFI if `<os firmware="efi">`, a `pflash` loader or an OVMF/EDK2/AAVMF loader path; otherwise BIOS), guest OS (from the libosinfo metadata `os id`, if present, shown without scheme and vendor host: `http://ubuntu.com/ubuntu/24.04` → `ubuntu/24.04`; an ID in another form is shown as is), description and title if set.
 - **CPU:** vCPU count (current/max), CPU mode or model, topology (sockets/dies/cores/threads).
 - **Memory:** maximum and current memory, hugepages if configured.
-- **Disks:** device type (disk, cdrom, floppy, lun), target dev, bus, source (file, block, network or volume), driver format, read-only/shareable flags, capacity/allocation/physical size (when the size can be read).
+- **Disks:** device type (disk, cdrom, floppy, lun), target dev, bus, source (file, block, dir, network or volume; other types are shown by name), driver format, read-only/shareable flags, capacity/allocation/physical size (when the size can be read).
   - A cdrom or floppy without a `<source>` is shown as "empty".
   - Allocation and physical size can be larger than capacity (seen with preallocated images). Values are shown as reported.
   - Disk targets are not assumed to be contiguous (e.g. `vda`, `vdc`).
@@ -122,7 +122,11 @@ Parsing is tolerant (see `tests/fixtures/`):
 ### SPEC-011: Read-only guarantee (v1)
 - The app runs only these remote commands, from a fixed allowlist: `virsh version`, `virsh list`, `virsh dominfo`, `virsh dumpxml`, `virsh domblkinfo`, `virsh domstate`, `virsh domdisplay`, plus the optional `virsh_prefix`.
 - No other remote command can be built or sent. This is enforced in code, in one place, and covered by tests.
-- Arguments (domain names, disk targets) are passed with safe shell quoting.
+- Every command has the form `LC_ALL=C [virsh_prefix ]virsh -r -c '<uri>' <subcommand> <args>`:
+  - `LC_ALL=C` keeps virsh output in English, so it can be parsed whatever the remote locale is.
+  - `-r` opens a **read-only** libvirt connection, so libvirt itself refuses any change: a second guard behind the allowlist.
+- Arguments (URI, domain names, disk targets) are passed with POSIX single-quote shell quoting. The remote login shell must be POSIX-compatible (sh, bash, dash, zsh, ksh).
+- `virsh_prefix` may contain only letters, digits, spaces and `_ - . / = : @ +`. It is checked when the config is loaded.
 
 ### SPEC-012: Refresh and concurrency (v1)
 - The user can refresh the inventory of one host or of all hosts.
@@ -139,6 +143,12 @@ These errors are shown per host, in plain language, with the underlying detail a
 - `virsh` not found;
 - permission denied on the libvirt URI (with a hint about the `libvirt` group or `virsh_prefix`);
 - XML parse error (with the domain name).
+
+Scope of an error:
+- SSH errors, `virsh` not found, permission denied and "cannot connect to the hypervisor" (from `virsh version` or `virsh list`, or from any later command) stop the refresh of that host.
+- A domain that disappears between `list` and a later command is left out, with a warning.
+- An XML parse error or another failing command for one domain is shown on that domain (with the detail); the other domains are still listed.
+- A failing `domblkinfo` only makes that disk's size "unknown".
 
 ### SPEC-014: Inventory cache (v1)
 - The last successful inventory of each host is saved as JSON in the platform cache directory.

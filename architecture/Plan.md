@@ -53,14 +53,16 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 - [ ] 2.7 Manual check against a real OpenSSH server and ssh-agent (TC-036/037 on a real host). Starting a local `sshd` from the assistant session was not permitted; to be run by the user.
 
 ### Phase 3: libvirt backend (SPEC-009, 010, 011, 013, 017)
-- [ ] 3.1 Allowlisted virsh command builder with shell quoting. (SPEC-011)
-- [ ] 3.2 Parse `virsh list --all` and `dominfo` into the domain list.
-- [ ] 3.3 Parse `dumpxml` into the component model; add `domblkinfo` sizes.
-- [ ] 3.4 Error classification (virsh missing, permission denied, and so on).
+- [x] 3.1 Allowlisted virsh command builder with shell quoting, `LC_ALL=C` and a read-only connection (`-r`). (SPEC-011; `vi-backend/src/command.rs`)
+- [x] 3.2 Parse `virsh version`, `list --all` and `dominfo` into the domain list. (`parse.rs`; model in `vi-core/src/model.rs`)
+- [x] 3.3 Parse `dumpxml` into the component model (roxmltree); add `domblkinfo` sizes. (`domxml.rs`, `libvirt.rs`)
+- [x] 3.4 Error classification (virsh missing, permission denied, sudo password, hypervisor down) and error scope per host/domain. (`error.rs`)
+  - Commands of one host run one after another over the one SSH session. Running them in parallel channels is possible later if a refresh is too slow.
 - [ ] 3.5 Collect fixtures from real hosts: running and stopped VMs, UEFI and BIOS, VNC and SPICE, socket listen.
   - Done (2026-11-13): 7 running (libvirt 12.0.0, VNC and SPICE, bridge) and 3 stopped (VNC, SPICE incl. `listen none`, NAT and bridge), anonymised.
   - Added: a second host with libvirt 10.0.0 (3 running VMs, including SPICE `listen none` on a running VM, NAT network).
-  - Still missing: UEFI (no UEFI VM available at the moment), a socket listen on a running VM, a network/volume disk, hostdev, and a host with stopped VMs in `list --all`.
+  - Still missing: UEFI (no UEFI VM available at the moment), a socket listen on a running VM, a network/volume disk, hostdev, and a host with stopped VMs in `list --all`. Until then these cases are tested with small synthetic XML in `domxml.rs`.
+- [ ] 3.6 Real-host check (TC-048), by the user: `cargo run -p vi-backend --example inventory -- <host>`. Confirms that the read-only connection allows `domblkinfo`, and that the output matches `virsh list --all` on the host.
 
 ### Phase 4: GUI (SPEC-003, 005, 012, 014, 015)
 - [ ] 4.1 Main window: host/VM tree, detail panel, toolbar, filter.

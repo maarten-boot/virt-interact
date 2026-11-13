@@ -5,9 +5,9 @@ A desktop GUI (Windows, Linux, macOS) that connects to remote hosts over SSH
 (libvirt/virsh first). Remote VNC/SPICE viewing over the same SSH connection
 follows in v1.1.
 
-Status: phase 2 done (config, contrast/theme, logging, SSH layer), except the
-manual checks on a real host and on Windows. The inventory and the host/VM
-views follow in phases 3–4. See `architecture/Spec.md` and
+Status: phases 2 and 3 done (config, contrast/theme, logging, SSH layer,
+libvirt inventory backend), except the manual checks on a real host and on
+Windows. The GUI host/VM views follow in phase 4. See `architecture/Spec.md` and
 `architecture/Plan.md`; changes per release are in `Changes.md`.
 
 ## Build
@@ -75,6 +75,21 @@ cargo run -p vi-ssh --example ssh-run -- [--no-agent] [--port N] [--user U] \
 `HOST` may be an `~/.ssh/config` alias; `COMMAND` defaults to `virsh version`.
 Use `RUST_LOG=vi_ssh=debug` to see each step. `tests/fixtures/ssh/` holds
 **test-only** keys for the automated tests; never use them elsewhere.
+
+## Testing the inventory against a real host
+
+The libvirt backend can be tried without the GUI. It connects like `ssh-run`,
+runs only the allowlisted read-only virsh commands and prints the inventory:
+
+```sh
+cargo run -p vi-backend --example inventory -- [--no-agent] [--port N] [--user U] \
+    [--identity PATH] [--known-hosts PATH] [--uri URI] [--prefix "sudo -n"] \
+    [--xml DOMAIN] HOST
+```
+
+Every command runs as `LC_ALL=C virsh -r -c '<uri>' ...` (read-only connection);
+the remote user needs read access to libvirt, e.g. membership of the `libvirt`
+group. Use `RUST_LOG=vi_backend=debug` to see each command.
 
 ## Layout
 

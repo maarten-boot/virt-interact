@@ -1,9 +1,11 @@
 //! Core types for virt-interact: configuration (SPEC-004/005), theme and
-//! contrast (SPEC-001), paths and command line, logging (SPEC-016).
+//! contrast (SPEC-001), paths and command line, logging (SPEC-016),
+//! inventory model (SPEC-009/010).
 
 pub mod config;
 pub mod contrast;
 pub mod logging;
+pub mod model;
 pub mod paths;
 
 /// Application name, used for config/cache/log directories (SPEC-004).

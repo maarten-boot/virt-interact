@@ -59,31 +59,31 @@ Each test case is traced to a Spec item.
 ## SPEC-009 / SPEC-010: Inventory
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-040 | U | Parse `virsh list --all` fixture output: running and shut-off domains, names with spaces. | _tbd_ | planned |
-| TC-041 | U | Parse `dominfo` fixture: state, persistent, autostart, UUID. Unknown keys (`Autostart Once`, `Security *`) are ignored without an error; works for both libvirt 10.0.0 and 12.0.0 fixtures. | _tbd_ | planned |
-| TC-042 | U | Parse the dumpxml fixture of a BIOS VM with 2 disks, a cdrom, 1 NIC and VNC graphics. | _tbd_ | planned |
-| TC-043 | U | Parse the dumpxml fixture of a UEFI VM with SPICE graphics, socket listen and a CPU topology. | _tbd_ | planned |
-| TC-044 | U | Parse a network disk (rbd/iscsi) and a volume disk source. | _tbd_ | planned |
-| TC-045 | U | Unknown XML elements are ignored without an error. | _tbd_ | planned |
-| TC-046 | U | Merge `domblkinfo` sizes into the disks; a missing size gives "unknown", not an error; allocation > capacity is kept as reported. | _tbd_ | planned |
-| TC-046a | U | Guest OS from libosinfo (`ubuntu/24.04`, `win/10`, `fedora/unknown`); an empty cdrom is shown as "empty". | _tbd_ | planned |
-| TC-046b | U | All fixtures in `tests/fixtures/` (live `'` and stopped `"` quoting) parse without errors. | _tbd_ | planned |
-| TC-047 | I | The mock runner gives a full host inventory from fixtures, including both running and stopped VMs. | _tbd_ | planned |
-| TC-048 | H | The inventory of the test host matches `virsh list --all` run on that host. | _tbd_ | planned |
+| TC-040 | U | Parse `virsh list --all` fixture output: running and shut-off domains, names with spaces. | `vi-backend tests/fixtures.rs::list_fixtures`; `parse::tests::list_with_spaces_and_states, list_edge_cases` | pass (2026-11-13) |
+| TC-041 | U | Parse `dominfo` fixture: state, persistent, autostart, UUID. Unknown keys (`Autostart Once`, `Security *`) are ignored without an error; works for both libvirt 10.0.0 and 12.0.0 fixtures. | `vi-backend tests/fixtures.rs::dominfo_fixtures_both_versions`; `parse::tests::dominfo_values` | pass (2026-11-13) |
+| TC-042 | U | Parse the dumpxml fixture of a BIOS VM with 3 disks, an empty cdrom, 1 NAT NIC and VNC graphics. | `vi-backend tests/fixtures.rs::bios_vm_components` | pass (2026-11-13) |
+| TC-043 | U | Parse the dumpxml fixture of a UEFI VM with SPICE graphics, socket listen and a CPU topology. | `vi-backend domxml::tests::uefi_spice_socket_topology` (synthetic XML: no UEFI capture yet) | pass (2026-11-13) |
+| TC-044 | U | Parse a network disk (rbd/iscsi) and a volume disk source. | `vi-backend domxml::tests::network_volume_block_disks` (synthetic XML) | pass (2026-11-13) |
+| TC-045 | U | Unknown XML elements are ignored without an error. | `vi-backend domxml::tests::unknown_elements_ignored_bad_xml_rejected` | pass (2026-11-13) |
+| TC-046 | U | Merge `domblkinfo` sizes into the disks; a missing size gives "unknown", not an error; allocation > capacity is kept as reported. | `vi-backend tests/fixtures.rs::full_inventory_libvirt_12, running_and_stopped_only_allowlisted_commands`; `parse::tests::blkinfo_missing_values` | pass (2026-11-13) |
+| TC-046a | U | Guest OS from libosinfo (`ubuntu/24.04`, `win/10`, `fedora/unknown`); an empty cdrom is shown as "empty". | `vi-backend tests/fixtures.rs::guest_os_title_and_listen_none`; `vi-core model::tests::guest_os_short_names` | pass (2026-11-13) |
+| TC-046b | U | All fixtures in `tests/fixtures/` (live `'` and stopped `"` quoting) parse without errors. | `vi-backend tests/fixtures.rs::all_fixture_xml_parses` | pass (2026-11-13) |
+| TC-047 | I | The mock runner gives a full host inventory from fixtures, including both running and stopped VMs. | `vi-backend tests/fixtures.rs::full_inventory_libvirt_12, running_and_stopped_only_allowlisted_commands` | pass (2026-11-13) |
+| TC-048 | H | The inventory of the test host matches `virsh list --all` run on that host; with the read-only connection (`-r`) dominfo, dumpxml and domblkinfo all work. | `cargo run -p vi-backend --example inventory -- <host>` | planned (manual, user) |
 
 ## SPEC-011: Read-only guarantee
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-050 | U | The command builder only produces allowlisted virsh subcommands; there is no API for any other command. | _tbd_ | planned |
-| TC-051 | U | Domain names containing `'`, `;`, `$()` and spaces are quoted safely. | _tbd_ | planned |
-| TC-052 | I | During a full refresh, the mock runner records only allowlisted commands. | _tbd_ | planned |
-| TC-053 | U | `virsh_prefix` is prepended exactly as configured, and is validated (no `;`, `&`, `\|`). | _tbd_ | planned |
+| TC-050 | U | The command builder only produces allowlisted virsh subcommands; there is no API for any other command. | `vi-backend command::tests::only_allowlisted_subcommands` | pass (2026-11-13) |
+| TC-051 | U | Domain names containing `'`, `;`, `$()` and spaces are quoted safely. | `vi-backend command::tests::hostile_names_are_quoted, quoting_round_trips_through_sh` (sh check on unix) | pass (2026-11-13) |
+| TC-052 | I | During a full refresh, the mock runner records only allowlisted commands. | `vi-backend tests/fixtures.rs::running_and_stopped_only_allowlisted_commands` | pass (2026-11-13) |
+| TC-053 | U | `virsh_prefix` is prepended exactly as configured, and is validated: only letters, digits, spaces and `_ - . / = : @ +` (so no `;`, `&`, `\|`, `$`, quotes, redirections); checked at config load and in the command builder. | `vi-backend command::tests::prefix_prepended_exactly_and_validated`; `vi-core config::tests::virsh_prefix_validated` | pass (2026-11-13) |
 
 ## SPEC-012 / SPEC-013: Refresh and errors
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
 | TC-060 | I | Of 3 hosts, one hangs (mock delay). The other two finish; the hanging one times out. | _tbd_ | planned |
-| TC-061 | U | Error classification from the stderr of: virsh not found, permission denied, connection refused. | _tbd_ | planned |
+| TC-061 | U/I | Error classification from the stderr of: virsh not found, permission denied (socket, polkit), sudo needs a password, hypervisor not running; messages carry hints. Through the backend: host-level failures abort, a vanished domain is a warning, an XML error or other per-domain failure is recorded on that domain. | `vi-backend error::tests::classify_stderr, messages_have_hints`; `tests/fixtures.rs::error_handling` | pass (2026-11-13) |
 | TC-061a | I | SSH errors are classified: connection refused → connection, command timeout → timeout (session stays usable), host key, authentication; exit status and stderr are returned. | `tests/session.rs::connection_refused, exit_status_stderr_and_timeout` | pass (2026-11-13) |
 | TC-062 | I | Status transitions: idle → connecting → refreshing → ok/error. | _tbd_ | planned |
 | TC-063 | U | `ConnectOptions::from_settings` takes the `[ssh]` timeouts from the config; defaults are 10 s / 30 s. | `vi-ssh session::tests::options_from_config_settings` | pass (2026-11-13) |

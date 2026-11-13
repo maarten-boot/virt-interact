@@ -114,3 +114,16 @@ Added `examples/ssh_config.example` plus a test. Everything else is waiting for 
 **User:** Pushed the CRLF fix.
 
 **Claude:** Run 43509629083: all four jobs pass (Windows, Linux, macOS stable; MSRV 1.92). On Windows all 59 tests pass, including the vi-ssh integration tests against the in-process SSH server, which ran there for the first time. TC-010 is now passing; Plan 2.5 and the risks row are updated. Still open: the manual checks (TC-038 on Windows, TC-036/037 on a real host, TC-006, TC-011 on Windows/macOS).
+
+## 13. Phase 3
+**User:** Start phase 3; asked whether it can be tested locally.
+
+**Claude:** Implemented the libvirt backend in `vi-backend`, with the inventory model in `vi-core/src/model.rs`:
+- `command`: the allowlist as a closed enum; every command is `LC_ALL=C [prefix ]virsh -r -c '<uri>' ...` with POSIX single quoting. `LC_ALL=C` keeps the output parseable on any locale; `-r` makes libvirt refuse changes (a second guard behind the allowlist). `virsh_prefix` is limited to plain characters and checked at config load.
+- `parse`: `version`, `list --all` (names with spaces, multi-word states), `dominfo`, `domblkinfo`.
+- `domxml`: domain XML into general/CPU/memory/disks/NICs/graphics/other devices (roxmltree; tolerant of unknown elements).
+- `error`: classification of virsh stderr with hints (virsh missing, permission denied incl. polkit, sudo password, hypervisor down). Host-level failures stop the refresh; a vanished domain is a warning; XML and other per-domain errors stay on that domain.
+- Tests: fixture-driven integration tests through the mock runner (all 13 captured XMLs, full inventories of both hosts, running plus stopped, only allowlisted commands) and synthetic XML for UEFI, socket listen, topology, network/volume disks. 86 tests pass; fmt and clippy are clean.
+- Local testing: yes. The new `inventory` example (`cargo run -p vi-backend --example inventory -- <host>`) connects over SSH and prints the full inventory (Plan 3.6, TC-048). It is the first real check that `virsh -r` allows `domblkinfo`.
+
+Spec updates made while implementing (no change to agreed behaviour, but new detail): SPEC-011 command form (`LC_ALL=C`, `-r`, POSIX login shell, prefix characters); SPEC-013 error scope (host vs. domain); SPEC-010 firmware detection, short guest OS name, `dir`/other disk sources.

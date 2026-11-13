@@ -148,6 +148,24 @@ impl HostConfig {
     }
 }
 
+/// Check a `virsh_prefix` (SPEC-011): plain words only, so it cannot chain
+/// or redirect commands. Allowed: letters, digits, space and `_ - . / = : @ +`.
+/// The error text completes "virsh_prefix ...".
+pub fn check_virsh_prefix(prefix: &str) -> Result<(), String> {
+    if prefix.trim().is_empty() {
+        return Err("must not be empty (leave it out instead)".into());
+    }
+    if let Some(c) = prefix
+        .chars()
+        .find(|c| !(c.is_ascii_alphanumeric() || " _-./=:@+".contains(*c)))
+    {
+        return Err(format!(
+            "contains {c:?}; only letters, digits, spaces and _ - . / = : @ + are allowed"
+        ));
+    }
+    Ok(())
+}
+
 /// Errors from loading, validating or saving the config.
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -230,6 +248,17 @@ impl Config {
             if h.port == Some(0) {
                 return Err(invalid(format!(
                     "host \"{}\": port must be 1..=65535",
+                    h.name
+                )));
+            }
+            if let Some(prefix) = &h.virsh_prefix
+                && let Err(why) = check_virsh_prefix(prefix)
+            {
+                return Err(invalid(format!("host \"{}\": virsh_prefix {why}", h.name)));
+            }
+            if h.libvirt_uri.trim().is_empty() {
+                return Err(invalid(format!(
+                    "host \"{}\": libvirt_uri must not be empty",
                     h.name
                 )));
             }
@@ -504,6 +533,25 @@ virsh_prefix = "sudo -n"
         let text = "[[hosts]]\nname = \"a\"\nhost = \"h\"\nport = 0\n";
         match Config::parse(text, p()) {
             Err(ConfigError::Invalid { message, .. }) => assert!(message.contains("port")),
+            other => panic!("expected invalid, got {other:?}"),
+        }
+    }
+
+    // TC-053 (config side)
+    #[test]
+    fn virsh_prefix_validated() {
+        assert!(check_virsh_prefix("sudo -n").is_ok());
+        assert!(check_virsh_prefix("sudo -n -u libvirt-admin").is_ok());
+        for bad in [
+            "sudo;rm", "a && b", "a | b", "$(x)", "`x`", "a > f", "a\nb", "'q'", "  ",
+        ] {
+            assert!(check_virsh_prefix(bad).is_err(), "{bad:?} accepted");
+        }
+        let text = "[[hosts]]\nname = \"a\"\nhost = \"h\"\nvirsh_prefix = \"sudo; rm\"\n";
+        match Config::parse(text, p()) {
+            Err(ConfigError::Invalid { message, .. }) => {
+                assert!(message.contains("virsh_prefix"), "{message}")
+            }
             other => panic!("expected invalid, got {other:?}"),
         }
     }
