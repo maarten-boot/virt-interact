@@ -55,3 +55,8 @@
 **Claude:** Implemented in `vi-core`: `contrast` (WCAG ratio, levels, palette generation), `config` (TOML, defaults, validation, atomic save, read-only store when the file is invalid), `paths` (platform directories, `--config`/`--help`/`--version`) and `logging` (daily file, own crates at the configured level, others at `warn`). In `vi-gui`: a theme generated from the palette, a contrast control in the toolbar that saves to the config, and dismissable warning/error messages. There are 22 unit tests, and they pass. A smoke test under Xvfb showed the white/black window, a clamped contrast warning, a config error shown in the GUI without overwriting the file, and the log file being created. Two issues found and fixed during the smoke test: long messages were not wrapping, and the log contained library noise.
 
 Spec clarifications made while implementing: unknown config keys are errors; contrast values above 21 are clamped; the log level applies to our own crates only (`RUST_LOG` overrides); the toolbar shows the lowest contrast ratio.
+
+## 7. Crosscheck 01
+**User:** Do a crosscheck.
+
+**Claude:** Saved `architecture/Crosscheck-2026-11-13-01.md`. 23 tests pass, and fmt and clippy are clean. Main finding: egui's `disabled_alpha = 0.5` would make disabled widgets fall below 4.5:1 (latent SPEC-001 violation), and the theme mapping has no test. Other findings: the Plan and code disagree on where ssh-config parsing lives; the Spec has no entry for `--help`/`--version`, log level validation, or `~` expansion in `identity_file`; the README is out of date; macOS x86_64 is not built in CI. Added `examples/config.example.toml` plus a test. All other fixes are waiting for the user's OK.

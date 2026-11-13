@@ -489,6 +489,18 @@ virsh_prefix = "sudo -n"
         ));
     }
 
+    // Example file in the repo must stay valid (crosscheck 2026-11-13-01).
+    #[test]
+    fn example_config_parses() {
+        let text = include_str!("../../../examples/config.example.toml");
+        let (cfg, w) = Config::parse(text, Path::new("config.example.toml")).unwrap();
+        assert!(w.is_empty());
+        assert_eq!(cfg.hosts.len(), 2);
+        assert_eq!(cfg.hosts[0], HostConfig::new("lab", "lab.example.lan"));
+        assert_eq!(cfg.hosts[1].port, Some(2222));
+        assert_eq!(cfg.hosts[1].virsh_prefix.as_deref(), Some("sudo -n"));
+    }
+
     #[test]
     fn invalid_log_level_rejected() {
         assert!(matches!(

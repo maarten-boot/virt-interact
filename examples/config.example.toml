@@ -1,0 +1,41 @@
+# Example virt-interact configuration (SPEC-004 / SPEC-005).
+#
+# Default location:
+#   Linux:   ~/.config/virt-interact/config.toml   ($XDG_CONFIG_HOME respected)
+#   Windows: %APPDATA%\virt-interact\config\config.toml
+#   macOS:   ~/Library/Application Support/virt-interact/config.toml
+# Or start with: virt-interact --config <PATH>
+#
+# Unknown keys are errors, so typing mistakes are reported with their line.
+# This file is parsed by a unit test (vi-core config::tests::example_config_parses).
+
+[ui]
+# Minimum contrast for every text/background pair (SPEC-001):
+# "AA" (4.5:1, default), "AAA" (7:1), "Max" (21:1, pure black on white),
+# or a number between 4.5 and 21.
+contrast = "AA"
+
+[ssh]
+connect_timeout_secs = 10   # default 10
+command_timeout_secs = 30   # default 30
+
+[logging]
+# error | warn | info (default) | debug | trace. Applies to virt-interact itself;
+# other libraries log at warn. RUST_LOG overrides this.
+level = "info"
+
+# One [[hosts]] block per remote host. Only name and host are required.
+
+[[hosts]]
+name = "lab"                    # display name, unique
+host = "lab.example.lan"        # hostname, IP address or ~/.ssh/config alias
+
+[[hosts]]
+name = "edge"
+host = "edge.example.lan"
+port = 2222                     # default: from ~/.ssh/config, else 22
+user = "ops"                    # default: from ~/.ssh/config, else local user
+identity_file = "~/.ssh/id_ed25519"   # default: agent / ssh config / default keys
+backend = "libvirt"             # default "libvirt" (only backend in v1)
+libvirt_uri = "qemu:///system"  # default "qemu:///system"
+virsh_prefix = "sudo -n"        # optional; when the user is not in the libvirt group
