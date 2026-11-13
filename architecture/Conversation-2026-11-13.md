@@ -127,3 +127,8 @@ Added `examples/ssh_config.example` plus a test. Everything else is waiting for 
 - Local testing: yes. The new `inventory` example (`cargo run -p vi-backend --example inventory -- <host>`) connects over SSH and prints the full inventory (Plan 3.6, TC-048). It is the first real check that `virsh -r` allows `domblkinfo`.
 
 Spec updates made while implementing (no change to agreed behaviour, but new detail): SPEC-011 command form (`LC_ALL=C`, `-r`, POSIX login shell, prefix characters); SPEC-013 error scope (host vs. domain); SPEC-010 firmware detection, short guest OS name, `dir`/other disk sources.
+
+## 14. Crosscheck 03
+**User:** Do a crosscheck.
+
+**Claude:** Saved `architecture/Crosscheck-2026-11-13-03.md`. 86 tests pass, and fmt and clippy are clean. Main finding (C1): a command timeout on one domain, for example `domblkinfo` on a hung NFS disk, aborts the whole host refresh, against SPEC-013. Smaller findings: a misleading hint for exit status 126 (C2); test gaps (C3, C5); `Listen::Network` drops the live address needed in v1.1 (C4); Spec wording on other devices and the prefix (S1, S2); the Plan technology table and risks (S3, S4); TestCases citations and wording (T1–T3). Added a comment on the `virsh_prefix` rules to `examples/config.example.toml`. Everything else waits for the user's OK.

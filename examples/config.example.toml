@@ -39,3 +39,5 @@ identity_file = "~/.ssh/id_ed25519"   # default: agent / ssh config / default ke
 backend = "libvirt"             # default "libvirt" (only backend in v1)
 libvirt_uri = "qemu:///system"  # default "qemu:///system"
 virsh_prefix = "sudo -n"        # optional; when the user is not in the libvirt group
+                                # (needs NOPASSWD for virsh; allowed characters:
+                                #  letters, digits, space and _ - . / = : @ +)
