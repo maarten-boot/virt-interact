@@ -1,0 +1,16 @@
+Id:             3
+Name:           vm-rcqh1f
+UUID:           a653af8a-5c47-45b7-ab75-d25bdb6aaa31
+OS Type:        hvm
+State:          running
+CPU(s):         2
+CPU time:       93.4s
+Max memory:     8388608 KiB
+Used memory:    8388608 KiB
+Persistent:     yes
+Autostart:      disable
+Managed save:   no
+Security model: apparmor
+Security DOI:   0
+Security label: libvirt-a653af8a-5c47-45b7-ab75-d25bdb6aaa31 (enforcing)
+

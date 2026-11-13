@@ -1,0 +1,4 @@
+Capacity:       64424509440
+Allocation:     62942437376
+Physical:       66829877248
+

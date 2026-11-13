@@ -1,0 +1,16 @@
+Id:             1
+Name:           vm-j2sunl
+UUID:           5d8e6162-dc22-47c8-8d0d-e8630ff4f036
+OS Type:        hvm
+State:          running
+CPU(s):         4
+CPU time:       5404.7s
+Max memory:     16777216 KiB
+Used memory:    16777216 KiB
+Persistent:     yes
+Autostart:      disable
+Managed save:   no
+Security model: apparmor
+Security DOI:   0
+Security label: libvirt-5d8e6162-dc22-47c8-8d0d-e8630ff4f036 (enforcing)
+

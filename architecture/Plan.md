@@ -52,7 +52,8 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 - [ ] 3.4 Error classification (virsh missing, permission denied, and so on).
 - [ ] 3.5 Collect fixtures from real hosts: running and stopped VMs, UEFI and BIOS, VNC and SPICE, socket listen.
   - Done (2026-11-13): 7 running (libvirt 12.0.0, VNC and SPICE, bridge) and 3 stopped (VNC, SPICE incl. `listen none`, NAT and bridge), anonymised.
-  - Still missing: UEFI, a socket listen on a running VM, a network/volume disk, hostdev, and a host with stopped VMs in `list --all`.
+  - Added: a second host with libvirt 10.0.0 (3 running VMs, including SPICE `listen none` on a running VM, NAT network).
+  - Still missing: UEFI (no UEFI VM available at the moment), a socket listen on a running VM, a network/volume disk, hostdev, and a host with stopped VMs in `list --all`.
 
 ### Phase 4: GUI (SPEC-003, 012, 014, 015)
 - [ ] 4.1 Main window: host/VM tree, detail panel, toolbar, filter.

@@ -1,0 +1,16 @@
+Id:             2
+Name:           vm-wtu5zf
+UUID:           078e2965-85df-4028-9e8b-d63634bbf2c3
+OS Type:        hvm
+State:          running
+CPU(s):         2
+CPU time:       22.9s
+Max memory:     8388608 KiB
+Used memory:    8388608 KiB
+Persistent:     yes
+Autostart:      disable
+Managed save:   no
+Security model: apparmor
+Security DOI:   0
+Security label: libvirt-078e2965-85df-4028-9e8b-d63634bbf2c3 (enforcing)
+

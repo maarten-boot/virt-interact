@@ -28,4 +28,5 @@ Replace them with random data, consistently across all files of one capture
 | Folder | Source | Content |
 |--------|--------|---------|
 | `libvirt-12.0.0/` | live capture, QEMU 10.2.1 | 7 running VMs: 5 VNC, 2 SPICE, bridge NICs, `'` quoting, domblkinfo incl. allocation > capacity |
+| `libvirt-10.0.0/` | live capture, QEMU 8.2.2 | 3 running VMs: VNC, SPICE, SPICE `listen none` (`domdisplay` gives "error: No graphical display found"); NAT network with `portid`/`virbr0`; `<title>`; no `Autostart Once` in dominfo; allocation > capacity |
 | `stopped/` | 3 persistent definitions | VNC autoport, SPICE `listen none` + GL, SPICE autoport; NAT and bridge; empty cdroms; `"` quoting |

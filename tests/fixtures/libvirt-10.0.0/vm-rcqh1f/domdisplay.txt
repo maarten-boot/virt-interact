@@ -1,0 +1,2 @@
+error: No graphical display found
+

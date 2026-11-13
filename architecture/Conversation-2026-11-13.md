@@ -44,3 +44,7 @@
 **User:** Never use machine names or their IP or MAC addresses in any commit; substitute random data.
 
 **Claude:** Anonymised everything with a script (kept in the session scratchpad, not in the repo). VM names became random `vm-xxxxxx`. Image paths, channel paths, MAC addresses and UUIDs (including security labels) were replaced with random values, applied consistently across files. The only IP was loopback `127.0.0.1`, which was kept. The script's leak check found nothing, and the repo history contains no real names. The mapping was not saved. Added the rule to `tests/fixtures/README.md` and `CLAUDE.md`. Applied the proposed Spec, TestCases and Plan updates.
+
+**User:** Added another capture directory in `tmp/` (a UEFI VM may not be available at the moment).
+
+**Claude:** Second host: libvirt 10.0.0 / QEMU 8.2.2, 3 running VMs. New cases: SPICE `listen none` on a running VM (`domdisplay` reports "No graphical display found"), a NAT network with `portid`/`virbr0`, a `<title>`, and dominfo without `Autostart Once`. Extended the anonymiser to cover `<title>`/`<description>` and to rebuild the `list --all` table in virsh's column layout. No leaks found. Committed as `tests/fixtures/libvirt-10.0.0/`. UEFI stays on the missing list; it is not blocking.

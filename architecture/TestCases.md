@@ -48,7 +48,7 @@ Each test case is traced to a Spec item.
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
 | TC-040 | U | Parse `virsh list --all` fixture output: running and shut-off domains, names with spaces. | _tbd_ | planned |
-| TC-041 | U | Parse `dominfo` fixture: state, persistent, autostart, UUID. Unknown keys (`Autostart Once`, `Security *`) are ignored without an error. | _tbd_ | planned |
+| TC-041 | U | Parse `dominfo` fixture: state, persistent, autostart, UUID. Unknown keys (`Autostart Once`, `Security *`) are ignored without an error; works for both libvirt 10.0.0 and 12.0.0 fixtures. | _tbd_ | planned |
 | TC-042 | U | Parse the dumpxml fixture of a BIOS VM with 2 disks, a cdrom, 1 NIC and VNC graphics. | _tbd_ | planned |
 | TC-043 | U | Parse the dumpxml fixture of a UEFI VM with SPICE graphics, socket listen and a CPU topology. | _tbd_ | planned |
 | TC-044 | U | Parse a network disk (rbd/iscsi) and a volume disk source. | _tbd_ | planned |
@@ -101,4 +101,4 @@ Each test case is traced to a Spec item.
 | TC-101 | U | The local listener binds to 127.0.0.1 only. | _tbd_ | planned |
 | TC-102 | H | A tunnel to the test VM's VNC port gives an RFB handshake. | _tbd_ | planned |
 | TC-103 | M | remote-viewer opens the console; the tunnel closes when the viewer exits. | — | planned |
-| TC-104 | U | Graphics with `listen type="none"` give "not reachable remotely", and no tunnel is offered. | _tbd_ | planned |
+| TC-104 | U | Graphics with `listen type="none"` give "not reachable remotely", and no tunnel is offered; the `domdisplay` error "No graphical display found" is not reported as a host error (fixture libvirt-10.0.0). | _tbd_ | planned |

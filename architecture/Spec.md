@@ -152,7 +152,7 @@ These errors are shown per host, in plain language, with the underlying detail a
 - For a running domain with VNC or SPICE graphics, the user can open a console.
 - The app reads the live graphics listen address and port, or the unix socket, from the live XML.
   - `virsh domdisplay` is only a fallback. For VNC it reports a display number (`vnc://127.0.0.1:1` means port 5901); for SPICE it reports the real port (`spice://127.0.0.1:5907`).
-  - If the graphics have `listen type="none"` (for example, SPICE with local GL), the console is marked "not reachable remotely" and the console action is disabled.
+  - If the graphics have `listen type="none"` (for example, SPICE with local GL), the console is marked "not reachable remotely" and the console action is disabled. In that case `virsh domdisplay` fails with `error: No graphical display found`; this is not treated as a host error.
 - It opens a local listener on `127.0.0.1` on a random free port and forwards connections over the existing SSH session:
   - `direct-tcpip` for a TCP listen address;
   - `direct-streamlocal` for a unix socket listen.
