@@ -1,0 +1,17 @@
+Id:             9
+Name:           vm-sa9lyn
+UUID:           daa6299b-d29b-4c8e-8a62-6df262c66d39
+OS Type:        hvm
+State:          running
+CPU(s):         4
+CPU time:       38103.2s
+Max memory:     8388608 KiB
+Used memory:    8388608 KiB
+Persistent:     yes
+Autostart:      disable
+Autostart Once: disable
+Managed save:   no
+Security model: apparmor
+Security DOI:   0
+Security label: libvirt-daa6299b-d29b-4c8e-8a62-6df262c66d39 (enforcing)
+

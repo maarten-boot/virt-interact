@@ -35,3 +35,12 @@
 - The local rustc is 1.93 (distro package, no rustup). eframe 0.36+ needs 1.95, so eframe is pinned to 0.35 and MSRV is set to 1.92.
 - Build, fmt, clippy (`-D warnings`) and tests pass locally. The GUI could not be launched in this session (no display), so TC-011 is for the user to check.
 - The user's XML files in `tmp/` were left out of the commit.
+
+## 5. Sample XML and fixtures
+**User:** Provided 3 domain XMLs in `tmp/` (stopped VMs) and later a tar archive: a full capture from one host (libvirt 12.0.0, QEMU 10.2.1) with 7 running VMs (version, list, dominfo, dumpxml, domdisplay, domblkinfo).
+
+**Claude:** Analysed both sets (details in the chat). Proposed Spec additions: guest OS from libosinfo, empty cdrom, `listen type="none"` not reachable remotely, the VNC display-number format of `domdisplay`, and tolerant parsing of dominfo. Proposed anonymising the fixtures before committing, because the repo may be public and the samples contain internal hostnames, a person's name, MAC addresses and UUIDs. Waiting for the user's OK.
+
+**User:** Never use machine names or their IP or MAC addresses in any commit; substitute random data.
+
+**Claude:** Anonymised everything with a script (kept in the session scratchpad, not in the repo). VM names became random `vm-xxxxxx`. Image paths, channel paths, MAC addresses and UUIDs (including security labels) were replaced with random values, applied consistently across files. The only IP was loopback `127.0.0.1`, which was kept. The script's leak check found nothing, and the repo history contains no real names. The mapping was not saved. Added the rule to `tests/fixtures/README.md` and `CLAUDE.md`. Applied the proposed Spec, TestCases and Plan updates.

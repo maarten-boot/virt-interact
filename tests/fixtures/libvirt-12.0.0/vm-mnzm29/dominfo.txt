@@ -1,0 +1,17 @@
+Id:             7
+Name:           vm-mnzm29
+UUID:           2f082fe9-daaa-4c5a-b1a2-ef98d13dabd0
+OS Type:        hvm
+State:          running
+CPU(s):         2
+CPU time:       3525.6s
+Max memory:     4194304 KiB
+Used memory:    4194304 KiB
+Persistent:     yes
+Autostart:      enable
+Autostart Once: disable
+Managed save:   no
+Security model: apparmor
+Security DOI:   0
+Security label: libvirt-2f082fe9-daaa-4c5a-b1a2-ef98d13dabd0 (enforcing)
+

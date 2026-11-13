@@ -1,0 +1,17 @@
+Id:             3
+Name:           vm-mbii6d
+UUID:           22194c14-b8bf-4479-bbb8-d19d59c0b13a
+OS Type:        hvm
+State:          running
+CPU(s):         2
+CPU time:       4744.2s
+Max memory:     4194304 KiB
+Used memory:    4194304 KiB
+Persistent:     yes
+Autostart:      enable
+Autostart Once: disable
+Managed save:   no
+Security model: apparmor
+Security DOI:   0
+Security label: libvirt-22194c14-b8bf-4479-bbb8-d19d59c0b13a (enforcing)
+

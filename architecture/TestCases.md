@@ -48,12 +48,14 @@ Each test case is traced to a Spec item.
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
 | TC-040 | U | Parse `virsh list --all` fixture output: running and shut-off domains, names with spaces. | _tbd_ | planned |
-| TC-041 | U | Parse `dominfo` fixture: state, persistent, autostart, UUID. | _tbd_ | planned |
+| TC-041 | U | Parse `dominfo` fixture: state, persistent, autostart, UUID. Unknown keys (`Autostart Once`, `Security *`) are ignored without an error. | _tbd_ | planned |
 | TC-042 | U | Parse the dumpxml fixture of a BIOS VM with 2 disks, a cdrom, 1 NIC and VNC graphics. | _tbd_ | planned |
 | TC-043 | U | Parse the dumpxml fixture of a UEFI VM with SPICE graphics, socket listen and a CPU topology. | _tbd_ | planned |
 | TC-044 | U | Parse a network disk (rbd/iscsi) and a volume disk source. | _tbd_ | planned |
 | TC-045 | U | Unknown XML elements are ignored without an error. | _tbd_ | planned |
-| TC-046 | U | Merge `domblkinfo` sizes into the disks; a missing size gives "unknown", not an error. | _tbd_ | planned |
+| TC-046 | U | Merge `domblkinfo` sizes into the disks; a missing size gives "unknown", not an error; allocation > capacity is kept as reported. | _tbd_ | planned |
+| TC-046a | U | Guest OS from libosinfo (`ubuntu/24.04`, `win/10`, `fedora/unknown`); an empty cdrom is shown as "empty". | _tbd_ | planned |
+| TC-046b | U | All fixtures in `tests/fixtures/` (live `'` and stopped `"` quoting) parse without errors. | _tbd_ | planned |
 | TC-047 | I | The mock runner gives a full host inventory from fixtures, including both running and stopped VMs. | _tbd_ | planned |
 | TC-048 | H | The inventory of the test host matches `virsh list --all` run on that host. | _tbd_ | planned |
 
@@ -95,7 +97,8 @@ Each test case is traced to a Spec item.
 ## SPEC-018: Remote viewing (v1.1)
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-100 | U | Builds the viewer URL from graphics info (vnc and spice, TCP and socket). | _tbd_ | planned |
+| TC-100 | U | Builds the viewer URL from graphics info (vnc and spice, TCP and socket). Fallback: the VNC display number from `domdisplay` (`:1` = 5901); the SPICE port is used as is. | _tbd_ | planned |
 | TC-101 | U | The local listener binds to 127.0.0.1 only. | _tbd_ | planned |
 | TC-102 | H | A tunnel to the test VM's VNC port gives an RFB handshake. | _tbd_ | planned |
 | TC-103 | M | remote-viewer opens the console; the tunnel closes when the viewer exits. | — | planned |
+| TC-104 | U | Graphics with `listen type="none"` give "not reachable remotely", and no tunnel is offered. | _tbd_ | planned |

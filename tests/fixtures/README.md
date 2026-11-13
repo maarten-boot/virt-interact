@@ -15,3 +15,17 @@ Suggested layout, one folder per host/libvirt version:
 Wanted: running and stopped VMs, BIOS and UEFI, VNC and SPICE, a socket listen,
 a network or volume disk. Remove or anonymise anything sensitive (hostnames,
 paths, MAC addresses) before committing.
+
+## Anonymisation (mandatory)
+
+Never commit real VM names, hostnames, IP or MAC addresses, UUIDs or image paths.
+Replace them with random data, consistently across all files of one capture
+(the same VM keeps the same random name, UUID and MAC in `list-all`, `dominfo`,
+`dumpxml` and security labels). Loopback `127.0.0.1` may stay.
+
+## Current sets
+
+| Folder | Source | Content |
+|--------|--------|---------|
+| `libvirt-12.0.0/` | live capture, QEMU 10.2.1 | 7 running VMs: 5 VNC, 2 SPICE, bridge NICs, `'` quoting, domblkinfo incl. allocation > capacity |
+| `stopped/` | 3 persistent definitions | VNC autoport, SPICE `listen none` + GL, SPICE autoport; NAT and bridge; empty cdroms; `"` quoting |

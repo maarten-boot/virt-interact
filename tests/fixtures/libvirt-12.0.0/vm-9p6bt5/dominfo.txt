@@ -1,0 +1,17 @@
+Id:             4
+Name:           vm-9p6bt5
+UUID:           c641c4ac-4101-4baa-a0f8-e69de8ce35d0
+OS Type:        hvm
+State:          running
+CPU(s):         6
+CPU time:       6586.8s
+Max memory:     16777216 KiB
+Used memory:    16777216 KiB
+Persistent:     yes
+Autostart:      enable
+Autostart Once: disable
+Managed save:   no
+Security model: apparmor
+Security DOI:   0
+Security label: libvirt-c641c4ac-4101-4baa-a0f8-e69de8ce35d0 (enforcing)
+

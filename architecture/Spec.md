@@ -84,16 +84,23 @@ Each host has these fields:
 
 ### SPEC-010: Machine components (v1)
 For each domain, the app shows:
-- **General:** OS type, architecture, machine type, firmware (BIOS or UEFI), description and title if set.
+- **General:** OS type, architecture, machine type, firmware (BIOS or UEFI), guest OS (from the libosinfo metadata `os id`, if present; an unknown ID is shown as is), description and title if set.
 - **CPU:** vCPU count (current/max), CPU mode or model, topology (sockets/dies/cores/threads).
 - **Memory:** maximum and current memory, hugepages if configured.
 - **Disks:** device type (disk, cdrom, floppy, lun), target dev, bus, source (file, block, network or volume), driver format, read-only/shareable flags, capacity/allocation/physical size (when the size can be read).
+  - A cdrom or floppy without a `<source>` is shown as "empty".
+  - Allocation and physical size can be larger than capacity (seen with preallocated images). Values are shown as reported.
+  - Disk targets are not assumed to be contiguous (e.g. `vda`, `vdc`).
 - **Network interfaces:** type, source (network or bridge), MAC address, model.
 - **Graphics:** type (vnc, spice), listen type and address, port/tlsPort (live values for running domains).
 - **Other devices:** controllers, video, sound, hostdev, filesystem, channels. Shown as a summary list.
 - **Raw XML:** the full domain XML, read-only, with copy to clipboard.
 
 For running domains the live XML is used. For stopped domains the persistent definition is used.
+
+Parsing is tolerant (see `tests/fixtures/`):
+- XML with either `'` or `"` attribute quoting is accepted.
+- `dominfo` is read as generic `key: value` lines, and unknown keys are ignored. libvirt 12 adds `Autostart Once`; security model and label lines are also present.
 
 ### SPEC-011: Read-only guarantee (v1)
 - The app runs only these remote commands, from a fixed allowlist: `virsh version`, `virsh list`, `virsh dominfo`, `virsh dumpxml`, `virsh domblkinfo`, `virsh domstate`, `virsh domdisplay`, plus the optional `virsh_prefix`.
@@ -143,7 +150,9 @@ These errors are shown per host, in plain language, with the underlying detail a
 
 ### SPEC-018: Remote console through SSH tunnel (v1.1)
 - For a running domain with VNC or SPICE graphics, the user can open a console.
-- The app reads the live graphics listen address and port, or the unix socket.
+- The app reads the live graphics listen address and port, or the unix socket, from the live XML.
+  - `virsh domdisplay` is only a fallback. For VNC it reports a display number (`vnc://127.0.0.1:1` means port 5901); for SPICE it reports the real port (`spice://127.0.0.1:5907`).
+  - If the graphics have `listen type="none"` (for example, SPICE with local GL), the console is marked "not reachable remotely" and the console action is disabled.
 - It opens a local listener on `127.0.0.1` on a random free port and forwards connections over the existing SSH session:
   - `direct-tcpip` for a TCP listen address;
   - `direct-streamlocal` for a unix socket listen.

@@ -1,0 +1,17 @@
+Id:             2
+Name:           vm-fahtr5
+UUID:           ce137376-8731-4b45-b7c3-936975a01a01
+OS Type:        hvm
+State:          running
+CPU(s):         4
+CPU time:       6149.9s
+Max memory:     8388608 KiB
+Used memory:    8388608 KiB
+Persistent:     yes
+Autostart:      enable
+Autostart Once: disable
+Managed save:   no
+Security model: apparmor
+Security DOI:   0
+Security label: libvirt-ce137376-8731-4b45-b7c3-936975a01a01 (enforcing)
+

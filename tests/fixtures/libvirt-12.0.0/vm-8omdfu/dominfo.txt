@@ -1,0 +1,17 @@
+Id:             5
+Name:           vm-8omdfu
+UUID:           be407521-264c-4503-9951-c5878913ae78
+OS Type:        hvm
+State:          running
+CPU(s):         4
+CPU time:       5099.4s
+Max memory:     8388608 KiB
+Used memory:    8388608 KiB
+Persistent:     yes
+Autostart:      enable
+Autostart Once: disable
+Managed save:   no
+Security model: apparmor
+Security DOI:   0
+Security label: libvirt-be407521-264c-4503-9951-c5878913ae78 (enforcing)
+
