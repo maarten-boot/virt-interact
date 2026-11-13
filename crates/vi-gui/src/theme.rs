@@ -2,8 +2,9 @@
 //!
 //! Every colour egui draws comes from the palette, so every text/background
 //! pair meets the palette's minimum ratio (TC-007). egui normally fades
-//! disabled widgets to 50% opacity, which would break that; fading is turned
-//! off here. Use [`disabled_text`] to show something as disabled.
+//! disabled widgets to 50% opacity, and fades text at the edges of scroll
+//! areas; both would break that, so both are turned off here ([`apply`]).
+//! Use [`disabled_text`] to show something as disabled.
 
 use eframe::egui::{self, Color32, Stroke};
 use vi_core::contrast::{Palette, Rgb};
@@ -58,8 +59,18 @@ pub fn visuals(p: &Palette) -> egui::Visuals {
     v
 }
 
+/// Apply the palette to every egui style (light and dark): visuals from
+/// [`visuals`], and no fading at scroll-area edges.
+pub fn apply(ctx: &egui::Context, p: &Palette) {
+    let v = visuals(p);
+    ctx.all_styles_mut(|s| {
+        s.visuals = v.clone();
+        // Faded text at a scroll edge would drop below the minimum ratio.
+        s.spacing.scroll.fade.strength = 0.0;
+    });
+}
+
 /// Text in the palette's disabled colour, which meets the minimum ratio.
-#[allow(dead_code)] // used from phase 4 on
 pub fn disabled_text(p: &Palette, text: impl Into<String>) -> egui::RichText {
     egui::RichText::new(text).color(c(p.disabled_text))
 }
@@ -152,5 +163,17 @@ mod tests {
         let v = visuals(&Palette::default_palette());
         assert_eq!(v.panel_fill, Color32::WHITE);
         assert_eq!(v.override_text_color, Some(Color32::BLACK));
+    }
+
+    // TC-007: no fading anywhere (disabled widgets, scroll edges).
+    #[test]
+    fn apply_turns_off_all_fading() {
+        let ctx = egui::Context::default();
+        apply(&ctx, &Palette::for_level(ContrastLevel::Aa));
+        ctx.all_styles_mut(|s| {
+            assert_eq!(s.spacing.scroll.fade.strength, 0.0);
+            assert_eq!(s.visuals.disabled_alpha, 1.0);
+            assert_eq!(s.visuals.panel_fill, Color32::WHITE);
+        });
     }
 }

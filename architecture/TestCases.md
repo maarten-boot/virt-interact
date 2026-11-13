@@ -12,8 +12,8 @@ Each test case is traced to a Spec item.
 | TC-003 | U | For each preset (AA, AAA, Max) and for custom ratios 5.0 and 10.0, every fg/bg pair in the palette is ≥ the minimum. | `vi-core contrast::tests::every_pair_meets_minimum_for_all_levels, max_is_pure_black_and_white` | pass (2026-11-13) |
 | TC-004 | U | Config `contrast = 3.0` is clamped to 4.5 and logs a warning; `inf` → 21, `-inf` → 4.5, NaN → 4.5, each with a warning. | `vi-core contrast::tests::custom_below_minimum_is_clamped_with_warning; config::tests::low_contrast_in_file_is_clamped_with_warning` | pass (2026-11-13) |
 | TC-005 | U | Config values `"AA"`, `"AAA"`, `"Max"` and `7.5` are parsed; an invalid string is an error. | `vi-core contrast::tests::raw_contrast_values; config::tests::contrast_values_in_file` | pass (2026-11-13) |
-| TC-007 | U | Every fg/bg colour pair in the egui `Visuals` built from the palette meets the minimum for each level; `disabled_alpha` is 1.0 (no fading). | `vi-gui theme::tests::every_egui_pair_meets_minimum, default_visuals_white_and_black` | pass (2026-11-13) |
-| TC-006 | M | Changing contrast in the toolbar takes effect at once and is saved to the config file. | — | planned (needs an interactive session) |
+| TC-007 | U | Every fg/bg colour pair in the egui `Visuals` built from the palette meets the minimum for each level; nothing fades: `disabled_alpha` is 1.0 and scroll-area edge fading is off. | `vi-gui theme::tests::every_egui_pair_meets_minimum, default_visuals_white_and_black, apply_turns_off_all_fading` | pass (2026-11-13) |
+| TC-006 | U/M | Changing contrast in the settings takes effect at once and is saved to the config file. | `vi-gui tests/app.rs::contrast_change_is_saved`; manual under Xvfb (menu → Max: pure black/white at once, `contrast = "Max"` saved) | pass (2026-11-13, automated + Xvfb); on a real desktop: open |
 
 ## SPEC-002 / SPEC-003: Platforms and GUI
 | ID | Type | Description | Test location | Status |
@@ -34,6 +34,8 @@ Each test case is traced to a Spec item.
 | TC-027 | U | The default path is `<config_dir>/virt-interact/config.toml` (Windows: `.../virt-interact/config/config.toml`). | `vi-core paths::tests::default_path_ends_with_app_and_file` | pass (2026-11-13) |
 | TC-028 | U | `examples/config.example.toml` and every TOML block in `README.md` parse; the example matches the documented values. | `vi-core config::tests::example_config_parses, readme_config_examples_parse` | pass (2026-11-13) |
 | TC-028a | U | `examples/ssh_config.example` parses without warnings and resolves as its comments say. | `vi-ssh sshconfig::tests::example_ssh_config` | pass (2026-11-13) |
+| TC-029 | U | Hosts are added, edited (including rename) and removed through the host form; a missing name/host, an invalid port, a duplicate name or a bad `virsh_prefix` keeps the form open with a message and changes nothing. | `vi-gui tests/app.rs::host_form_add_edit_remove` | pass (2026-11-13) |
+| TC-029a | U | "Reload config" picks up hosts added in the file; an invalid file is reported and the current config stays (Plan 4.6). | `vi-gui tests/app.rs::reload_config` | pass (2026-11-13) |
 
 ## SPEC-006 / SPEC-007 / SPEC-008: SSH
 | ID | Type | Description | Test location | Status |
@@ -71,7 +73,7 @@ Each test case is traced to a Spec item.
 | TC-046a | U | Guest OS from libosinfo (`ubuntu/24.04`, `win/10`, `fedora/unknown`); an empty cdrom is shown as "empty". | `vi-backend tests/fixtures.rs::guest_os_title_and_listen_none`; `vi-core model::tests::guest_os_short_names` | pass (2026-11-13) |
 | TC-046b | U | All fixtures in `tests/fixtures/` (live `'` and stopped `"` quoting) parse without errors. | `vi-backend tests/fixtures.rs::all_fixture_xml_parses` | pass (2026-11-13) |
 | TC-047 | I | The mock runner gives a full host inventory from fixtures, including both running and stopped VMs. | `vi-backend tests/fixtures.rs::full_inventory_libvirt_12, running_and_stopped_only_allowlisted_commands` | pass (2026-11-13) |
-| TC-048 | H | The inventory of the test host matches `virsh list --all` run on that host; with the read-only connection (`-r`) dominfo, dumpxml and domblkinfo all work. | `cargo run -p vi-backend --example inventory -- <host>` | planned (manual, user) |
+| TC-048 | H | The inventory of the test host matches `virsh list --all` run on that host; with the read-only connection (`-r`) dominfo, dumpxml and domblkinfo all work. | `cargo run -p vi-backend --example inventory -- <host>` | pass without prefix (user, 2026-11-13: libvirt 12.0.0 host, 7 VMs, all disk sizes read over `virsh -r`); with `--prefix "sudo -n"`: open |
 
 ## SPEC-011: Read-only guarantee
 | ID | Type | Description | Test location | Status |
@@ -85,34 +87,39 @@ Each test case is traced to a Spec item.
 ## SPEC-012 / SPEC-013: Refresh and errors
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-060 | I | Of 3 hosts, one hangs (mock delay). The other two finish; the hanging one times out. | _tbd_ | planned |
+| TC-060 | I | Of 3 hosts, one hangs (mock delay). The other two finish; the hanging one times out. | `vi-gui worker::tests::hanging_host_does_not_block_others` | pass (2026-11-13) |
 | TC-061 | U/I | Error classification from the stderr of: virsh not found (also behind `sudo`), not executable (exit 126, no libvirt-group hint), permission denied (socket, polkit), sudo needs a password, hypervisor not running; messages carry hints. Through the backend: host-level failures abort, a vanished domain is a warning, an XML error or other per-domain failure is recorded on that domain. | `vi-backend error::tests::classify_stderr, messages_have_hints`; `tests/fixtures.rs::error_handling` | pass (2026-11-13) |
 | TC-061a | I | SSH errors are classified: connection refused → connection, command timeout → timeout (session stays usable), host key, authentication; exit status and stderr are returned. | `tests/session.rs::connection_refused, exit_status_stderr_and_timeout` | pass (2026-11-13) |
-| TC-062 | I | Status transitions: idle → connecting → refreshing → ok/error. | _tbd_ | planned |
+| TC-062 | I | Status transitions: idle → connecting → refreshing → ok/error. | `vi-gui worker::tests::status_transitions` | pass (2026-11-13) |
 | TC-063 | U | `ConnectOptions::from_settings` takes the `[ssh]` timeouts from the config; defaults are 10 s / 30 s. | `vi-ssh session::tests::options_from_config_settings` | pass (2026-11-13) |
 | TC-064 | I | A hanging `domblkinfo` makes only that disk's size unknown (with a warning); a hanging `dumpxml` is shown on that domain; the other domains are complete; a hanging `virsh version` fails the host with a timeout. | `vi-backend tests/fixtures.rs::timeouts_stay_per_domain` | pass (2026-11-13) |
 | TC-065 | I | Domains of one host are queried in parallel (8 domains with a 1 s delay: about 2 s with 4 at a time, 8 s with 1); results keep the list order. | `vi-backend tests/fixtures.rs::domains_are_queried_in_parallel` | pass (2026-11-13) |
+| TC-066 | I | The SSH connection of a host is kept and reused (no second connect, so no second passphrase prompt); "forget" (host edited) forces a reconnect; a second refresh of a busy host is not started. | `vi-gui worker::tests::connection_is_reused` | pass (2026-11-13) |
 
 ## SPEC-014: Cache
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-070 | U | The cache round-trips through JSON and keeps its timestamp. | _tbd_ | planned |
-| TC-071 | I | When a host is unreachable, the cached inventory is shown with the cached flag set. | _tbd_ | planned |
-| TC-072 | U | Clearing the cache removes the files. | _tbd_ | planned |
+| TC-070 | U | The cache round-trips through JSON and keeps its timestamp; different host names never share a file; a damaged or other-format file is ignored. | `vi-core cache::tests::round_trip_keeps_timestamp, bad_files_are_ignored` | pass (2026-11-13) |
+| TC-071 | I | At start the cached inventory is shown, marked cached, with its timestamp; when a refresh fails it stays shown, still marked. | `vi-gui tests/app.rs::cached_inventory_shown_when_host_unreachable`; seen under Xvfb | pass (2026-11-13) |
+| TC-072 | U | Clearing the cache removes only the cache files, and cached inventories disappear from the view. | `vi-core cache::tests::clear_removes_cache_files_only`; `vi-gui tests/app.rs::cached_inventory_shown_when_host_unreachable` | pass (2026-11-13) |
+| TC-073 | U | Timestamps are shown as `YYYY-MM-DD HH:MM UTC` and as an age (`5 min ago`). | `vi-core cache::tests::time_formatting` | pass (2026-11-13) |
 
 ## SPEC-015 / SPEC-016: GUI and logging
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-080 | U | The filter by name substring and state gives the expected VM set. | _tbd_ | planned |
-| TC-081 | M | The tree, detail panel, raw XML copy and toolbar actions work. | — | planned |
-| TC-082 | U | The state indicator has a text or icon label, not only colour. | _tbd_ | planned |
+| TC-080 | U | The filter by name substring and state gives the expected VM set. | `vi-gui view::tests::filter_by_name_and_state` | pass (2026-11-13) |
+| TC-081 | M | The tree, detail panel, raw XML copy and toolbar actions work. | manual; partly under Xvfb (tree, VM details, host details with error, add-host form, settings) | partly (2026-11-13): clipboard copy, SSH prompt dialogs and a live refresh on a real desktop open |
+| TC-082 | U | The state indicator has a text or icon label, not only colour. | `vi-gui view::tests::state_badges_have_text` | pass (2026-11-13) |
+| TC-085 | U | SSH questions (host key, passphrase) reach the GUI and the answers reach the SSH layer; a dialog closed without an answer means "no". | `vi-gui prompts::tests::answers_reach_the_ssh_layer` | pass (2026-11-13) |
+| TC-086 | U | Identical other devices are grouped with a count (e.g. 15 × `pcie-root-port`); an empty cdrom shows "empty drive", a disk without size "size unknown". | `vi-gui view::tests::grouping_and_disk_text` | pass (2026-11-13) |
+| TC-087 | U | Every view draws without a display: no selection, host, running/stopped/broken VM, filter, dialogs and settings. | `vi-gui tests/app.rs::all_views_render_headless` | pass (2026-11-13) |
 | TC-083 | U | The log file is created in the platform log directory at the configured level. | `vi-core logging::tests::writes_log_file_at_level, other_crates_only_warn` | pass (2026-11-13) |
 | TC-084 | U | An invalid `logging.level` is a config error. | `vi-core config::tests::invalid_log_level_rejected` | pass (2026-11-13) |
 
 ## SPEC-017: Backend abstraction
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-090 | U | The GUI depends only on the `HypervisorBackend` trait. A dummy backend compiles and is listed. | _tbd_ | planned |
+| TC-090 | U | The GUI depends only on the `HypervisorBackend` trait (`for_host_with`). A dummy backend compiles and is listed. | `vi-backend tests::dummy_backend_through_the_trait` | pass (2026-11-13) |
 | TC-091 | U | `MockRunner` returns canned output, gives exit 127 for unknown commands, and records every command. | `vi-ssh runner::tests::mock_runner_records_and_answers` | pass (2026-11-13) |
 
 ## SPEC-018: Remote viewing (v1.1)

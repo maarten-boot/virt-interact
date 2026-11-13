@@ -5,9 +5,10 @@ A desktop GUI (Windows, Linux, macOS) that connects to remote hosts over SSH
 (libvirt/virsh first). Remote VNC/SPICE viewing over the same SSH connection
 follows in v1.1.
 
-Status: phases 2 and 3 done (config, contrast/theme, logging, SSH layer,
-libvirt inventory backend), except the manual checks on a real host and on
-Windows. The GUI host/VM views follow in phase 4. See `architecture/Spec.md` and
+Status: phases 2–4 done (config, contrast/theme, logging, SSH layer,
+libvirt inventory backend, GUI with host/VM tree, details, cache and host
+dialogs). Open: manual checks on a real desktop, on Windows and macOS.
+Packaging (phase 5) is next. See `architecture/Spec.md` and
 `architecture/Plan.md`; changes per release are in `Changes.md`.
 
 ## Build
@@ -59,7 +60,14 @@ name = "lab"
 host = "lab.example.lan"
 ```
 
-Contrast can also be changed in the toolbar; the choice is saved to the config.
+In the GUI, add hosts with **Add host…** (or in the config file, then
+**Reload config**), and press **Refresh all**. The app does not connect on its
+own at startup; it shows the last inventory from its cache, marked "cached".
+Unknown host keys and key passphrases are asked in a dialog. The SSH
+connection of each host stays open while the app runs, so later refreshes
+do not ask again.
+
+Contrast is set under **Settings…**; the choice is saved to the config.
 Logs go to `<local data dir>/virt-interact/logs/` (on Linux
 `~/.local/share/virt-interact/logs/`); set `RUST_LOG` to override the level.
 

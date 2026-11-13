@@ -1,0 +1,1365 @@
+//! The main window (SPEC-015): toolbar, host/VM tree, detail panel, dialogs.
+//!
+//! State changes go through methods on [`App`] so tests can drive them
+//! without a display (Plan 4.7). Drawing is in [`App::show`], which tests
+//! run headless with `egui::Context::run_ui`.
+
+use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::mpsc::{Receiver, channel};
+
+use eframe::egui::{self, Color32, RichText};
+use vi_core::cache::{Cache, CachedInventory, format_age, format_utc, now_secs};
+use vi_core::config::{Config, ConfigStore, HostConfig};
+use vi_core::contrast::{ContrastLevel, MAX_RATIO, MIN_RATIO, Palette};
+use vi_core::model::{Domain, DomainDetails, HostInventory};
+use vi_ssh::Secret;
+
+use crate::prompts::{GuiPrompter, PromptKind, PromptRequest};
+use crate::theme;
+use crate::view::{self, Filter, StateColor, StateFilter};
+use crate::worker::{Event, HostStatus, SshConnector, Worker};
+
+/// A message shown under the toolbar until dismissed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Message {
+    pub text: String,
+    pub is_error: bool,
+}
+
+impl Message {
+    pub fn warning(text: impl Into<String>) -> Message {
+        Message {
+            text: text.into(),
+            is_error: false,
+        }
+    }
+    pub fn error(text: impl Into<String>) -> Message {
+        Message {
+            text: text.into(),
+            is_error: true,
+        }
+    }
+    pub fn info(text: impl Into<String>) -> Message {
+        Message::warning(text)
+    }
+}
+
+/// The inventory shown for a host.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Shown {
+    pub inventory: HostInventory,
+    pub taken_at: u64,
+    /// From the cache, or the last good result after a failed refresh
+    /// (SPEC-014): shown with a "cached" marker.
+    pub cached: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HostEntry {
+    pub status: HostStatus,
+    pub shown: Option<Shown>,
+}
+
+impl Default for HostEntry {
+    fn default() -> Self {
+        HostEntry {
+            status: HostStatus::Idle,
+            shown: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum Selection {
+    #[default]
+    None,
+    Host(String),
+    Domain(String, String),
+}
+
+impl Selection {
+    pub fn host(&self) -> Option<&str> {
+        match self {
+            Selection::None => None,
+            Selection::Host(h) | Selection::Domain(h, _) => Some(h),
+        }
+    }
+}
+
+/// Which contrast option the settings show.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ContrastChoice {
+    Aa,
+    Aaa,
+    Max,
+    Custom,
+}
+
+/// The add/edit host form (Plan 4.3).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HostForm {
+    /// Name of the host being edited; `None` when adding.
+    pub original: Option<String>,
+    pub name: String,
+    pub host: String,
+    pub port: String,
+    pub user: String,
+    pub identity_file: String,
+    pub libvirt_uri: String,
+    pub virsh_prefix: String,
+    pub error: Option<String>,
+}
+
+impl HostForm {
+    pub fn new_host() -> HostForm {
+        HostForm {
+            libvirt_uri: HostConfig::new("", "").libvirt_uri,
+            ..HostForm::default()
+        }
+    }
+
+    pub fn edit(h: &HostConfig) -> HostForm {
+        HostForm {
+            original: Some(h.name.clone()),
+            name: h.name.clone(),
+            host: h.host.clone(),
+            port: h.port.map(|p| p.to_string()).unwrap_or_default(),
+            user: h.user.clone().unwrap_or_default(),
+            identity_file: h
+                .identity_file
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+            libvirt_uri: h.libvirt_uri.clone(),
+            virsh_prefix: h.virsh_prefix.clone().unwrap_or_default(),
+            error: None,
+        }
+    }
+
+    /// The host entry this form describes. Field checks that need the whole
+    /// config (unique name, prefix characters) are done by `Config::validate`.
+    pub fn to_host(&self, base: Option<&HostConfig>) -> Result<HostConfig, String> {
+        let opt = |s: &str| {
+            let t = s.trim();
+            (!t.is_empty()).then(|| t.to_string())
+        };
+        let port = match self.port.trim() {
+            "" => None,
+            p => Some(
+                p.parse::<u16>()
+                    .ok()
+                    .filter(|p| *p > 0)
+                    .ok_or_else(|| format!("port \"{p}\" must be a number 1–65535"))?,
+            ),
+        };
+        if self.name.trim().is_empty() {
+            return Err("Name is required.".into());
+        }
+        if self.host.trim().is_empty() {
+            return Err("Host is required.".into());
+        }
+        let mut h = base.cloned().unwrap_or_else(|| HostConfig::new("", ""));
+        h.name = self.name.trim().to_string();
+        h.host = self.host.trim().to_string();
+        h.port = port;
+        h.user = opt(&self.user);
+        h.identity_file = opt(&self.identity_file).map(PathBuf::from);
+        h.libvirt_uri =
+            opt(&self.libvirt_uri).unwrap_or_else(|| HostConfig::new("", "").libvirt_uri);
+        h.virsh_prefix = opt(&self.virsh_prefix);
+        Ok(h)
+    }
+}
+
+/// A prompt from the SSH layer being shown.
+struct OpenPrompt {
+    request: PromptRequest,
+    passphrase: String,
+}
+
+pub struct App {
+    pub store: ConfigStore,
+    pub palette: Palette,
+    pub messages: Vec<Message>,
+    pub hosts: HashMap<String, HostEntry>,
+    pub selection: Selection,
+    pub filter: Filter,
+    pub host_form: Option<HostForm>,
+    pub confirm_remove: Option<String>,
+    pub settings_open: bool,
+    custom_ratio: f64,
+    cache: Option<Cache>,
+    worker: Option<Worker>,
+    events: Option<Receiver<Event>>,
+    prompt_rx: Option<Receiver<PromptRequest>>,
+    prompts: VecDeque<PromptRequest>,
+    open_prompt: Option<OpenPrompt>,
+}
+
+impl App {
+    /// An app without background worker (tests, or no network).
+    pub fn new(store: ConfigStore, messages: Vec<Message>, cache: Option<Cache>) -> App {
+        let level = store.config.ui.contrast;
+        let custom_ratio = match level {
+            ContrastLevel::Custom(r) => r,
+            _ => 10.0,
+        };
+        let mut app = App {
+            palette: Palette::for_level(level),
+            store,
+            messages,
+            hosts: HashMap::new(),
+            selection: Selection::None,
+            filter: Filter::default(),
+            host_form: None,
+            confirm_remove: None,
+            settings_open: false,
+            custom_ratio,
+            cache,
+            worker: None,
+            events: None,
+            prompt_rx: None,
+            prompts: VecDeque::new(),
+            open_prompt: None,
+        };
+        app.sync_hosts();
+        app
+    }
+
+    /// Attach a worker; prompts arrive on `prompt_rx`.
+    pub fn with_worker(
+        mut self,
+        worker: Worker,
+        events: Receiver<Event>,
+        prompt_rx: Receiver<PromptRequest>,
+    ) -> App {
+        self.worker = Some(worker);
+        self.events = Some(events);
+        self.prompt_rx = Some(prompt_rx);
+        self
+    }
+
+    /// The real setup: SSH connector, GUI prompter, repaint on events.
+    pub fn with_ssh(self, ctx: &egui::Context) -> App {
+        let (ptx, prx) = channel();
+        let c1 = ctx.clone();
+        let notify: Arc<dyn Fn() + Send + Sync> = Arc::new(move || c1.request_repaint());
+        let prompter = Arc::new(GuiPrompter::new(ptx, notify.clone()));
+        let (worker, events) = Worker::new(Arc::new(SshConnector::new()), prompter, notify);
+        self.with_worker(worker, events, prx)
+    }
+
+    pub fn apply_theme(&self, ctx: &egui::Context) {
+        theme::apply(ctx, &self.palette);
+    }
+
+    /// Make `hosts` match the config: add entries (from the cache if there
+    /// is one), drop entries of removed hosts.
+    fn sync_hosts(&mut self) {
+        let names: Vec<String> = self
+            .store
+            .config
+            .hosts
+            .iter()
+            .map(|h| h.name.clone())
+            .collect();
+        self.hosts.retain(|k, _| names.contains(k));
+        for n in names {
+            if !self.hosts.contains_key(&n) {
+                let shown = self.cache.as_ref().and_then(|c| c.load(&n)).map(|c| Shown {
+                    inventory: c.inventory,
+                    taken_at: c.taken_at,
+                    cached: true,
+                });
+                self.hosts.insert(
+                    n,
+                    HostEntry {
+                        status: HostStatus::Idle,
+                        shown,
+                    },
+                );
+            }
+        }
+        if let Some(h) = self.selection.host()
+            && !self.hosts.contains_key(h)
+        {
+            self.selection = Selection::None;
+        }
+    }
+
+    fn host_config(&self, name: &str) -> Option<&HostConfig> {
+        self.store.config.hosts.iter().find(|h| h.name == name)
+    }
+
+    // ---- actions -------------------------------------------------------
+
+    /// Start a refresh of one host (SPEC-012).
+    pub fn refresh(&mut self, name: &str) {
+        let Some(h) = self.host_config(name).cloned() else {
+            return;
+        };
+        let ssh = self.store.config.ssh.clone();
+        match &self.worker {
+            Some(w) => {
+                if w.refresh(h, ssh)
+                    && let Some(e) = self.hosts.get_mut(name)
+                {
+                    e.status = HostStatus::Connecting;
+                }
+            }
+            None => self.messages.push(Message::error(
+                "Refresh is not available (no background worker).",
+            )),
+        }
+    }
+
+    pub fn refresh_all(&mut self) {
+        let names: Vec<String> = self
+            .store
+            .config
+            .hosts
+            .iter()
+            .map(|h| h.name.clone())
+            .collect();
+        for n in names {
+            self.refresh(&n);
+        }
+    }
+
+    /// Handle worker events and SSH prompts. Called every frame.
+    pub fn poll(&mut self) {
+        let mut events = Vec::new();
+        if let Some(rx) = &self.events {
+            events.extend(rx.try_iter());
+        }
+        for e in events {
+            self.handle(e);
+        }
+        if let Some(rx) = &self.prompt_rx {
+            self.prompts.extend(rx.try_iter());
+        }
+        if self.open_prompt.is_none()
+            && let Some(request) = self.prompts.pop_front()
+        {
+            self.open_prompt = Some(OpenPrompt {
+                request,
+                passphrase: String::new(),
+            });
+        }
+    }
+
+    pub fn handle(&mut self, e: Event) {
+        match e {
+            Event::Status { host, status } => {
+                let Some(entry) = self.hosts.get_mut(&host) else {
+                    return; // host removed meanwhile
+                };
+                if let HostStatus::Error(_) = status
+                    && let Some(s) = &mut entry.shown
+                {
+                    // Keep showing the last good inventory, marked (SPEC-014).
+                    s.cached = true;
+                }
+                entry.status = status;
+            }
+            Event::Inventory {
+                host,
+                inventory,
+                taken_at,
+            } => {
+                let Some(entry) = self.hosts.get_mut(&host) else {
+                    return;
+                };
+                if let Some(c) = &self.cache {
+                    let ci = CachedInventory::new(&host, taken_at, inventory.clone());
+                    if let Err(e) = c.save(&ci) {
+                        tracing::warn!(host, error = %e, "cannot save cache");
+                    }
+                }
+                entry.shown = Some(Shown {
+                    inventory,
+                    taken_at,
+                    cached: false,
+                });
+                // A selected domain that no longer exists: select the host.
+                if let Selection::Domain(h, d) = &self.selection
+                    && *h == host
+                    && !entry
+                        .shown
+                        .as_ref()
+                        .is_some_and(|s| s.inventory.domains.iter().any(|x| &x.name == d))
+                {
+                    self.selection = Selection::Host(host);
+                }
+            }
+        }
+    }
+
+    /// Change contrast: re-theme at once and save to the config (TC-006).
+    pub fn set_contrast(&mut self, ctx: &egui::Context, level: ContrastLevel) {
+        if self.store.config.ui.contrast == level {
+            return;
+        }
+        self.store.config.ui.contrast = level;
+        self.palette = Palette::for_level(level);
+        self.apply_theme(ctx);
+        tracing::info!("contrast set to {}", level.label());
+        self.save_config();
+    }
+
+    fn save_config(&mut self) -> bool {
+        match self.store.save() {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!("{e}");
+                self.messages
+                    .push(Message::error(format!("Not saved: {e}")));
+                false
+            }
+        }
+    }
+
+    /// Apply the host form: validate, update the config, save. On error the
+    /// form stays open with the message.
+    pub fn submit_host_form(&mut self) -> bool {
+        let Some(form) = self.host_form.clone() else {
+            return false;
+        };
+        let base = form
+            .original
+            .as_deref()
+            .and_then(|n| self.host_config(n))
+            .cloned();
+        let host = match form.to_host(base.as_ref()) {
+            Ok(h) => h,
+            Err(e) => {
+                self.host_form.as_mut().expect("form").error = Some(e);
+                return false;
+            }
+        };
+        let mut config: Config = self.store.config.clone();
+        match &form.original {
+            Some(old) => {
+                if let Some(slot) = config.hosts.iter_mut().find(|h| &h.name == old) {
+                    *slot = host.clone();
+                }
+            }
+            None => config.hosts.push(host.clone()),
+        }
+        if let Err(e) = config.validate(&self.store.path) {
+            let msg = e.to_string();
+            let msg = msg
+                .strip_prefix(&format!("{}: ", self.store.path.display()))
+                .unwrap_or(&msg)
+                .to_string();
+            self.host_form.as_mut().expect("form").error = Some(msg);
+            return false;
+        }
+        let old_config = std::mem::replace(&mut self.store.config, config);
+        if !self.save_config() {
+            self.store.config = old_config;
+            return false;
+        }
+        if let Some(old) = &form.original {
+            // Connection settings may have changed: reconnect next time.
+            if let Some(w) = &self.worker {
+                w.forget(old);
+            }
+            if *old != host.name {
+                if let Some(entry) = self.hosts.remove(old) {
+                    self.hosts.insert(host.name.clone(), entry);
+                }
+                if let Some(c) = &self.cache {
+                    let _ = c.remove(old);
+                }
+            }
+        }
+        self.sync_hosts();
+        self.selection = Selection::Host(host.name);
+        self.host_form = None;
+        true
+    }
+
+    pub fn remove_host(&mut self, name: &str) {
+        let before = self.store.config.clone();
+        self.store.config.hosts.retain(|h| h.name != name);
+        if !self.save_config() {
+            self.store.config = before;
+            return;
+        }
+        if let Some(w) = &self.worker {
+            w.forget(name);
+        }
+        if let Some(c) = &self.cache {
+            let _ = c.remove(name);
+        }
+        self.sync_hosts();
+    }
+
+    /// Re-read the config file (Plan 4.6). An invalid file is reported and
+    /// the current config stays.
+    pub fn reload_config(&mut self, ctx: &egui::Context) {
+        let (store, warnings, error) = ConfigStore::open(self.store.path.clone());
+        for w in warnings {
+            self.messages
+                .push(Message::warning(format!("Warning: {w}")));
+        }
+        if let Some(e) = error {
+            self.messages
+                .push(Message::error(format!("Config not reloaded: {e}")));
+            return;
+        }
+        self.store = store;
+        if let Some(w) = &self.worker {
+            w.forget_all();
+        }
+        self.palette = Palette::for_level(self.store.config.ui.contrast);
+        if let ContrastLevel::Custom(r) = self.store.config.ui.contrast {
+            self.custom_ratio = r;
+        }
+        self.apply_theme(ctx);
+        self.sync_hosts();
+        self.messages.push(Message::info(format!(
+            "Config reloaded: {} host(s).",
+            self.store.config.hosts.len()
+        )));
+    }
+
+    /// Delete the cache files and stop showing cached inventories.
+    pub fn clear_cache(&mut self) {
+        let Some(c) = &self.cache else { return };
+        match c.clear() {
+            Ok(n) => {
+                for e in self.hosts.values_mut() {
+                    if e.shown.as_ref().is_some_and(|s| s.cached) {
+                        e.shown = None;
+                    }
+                }
+                self.messages
+                    .push(Message::info(format!("Cache cleared ({n} file(s)).")));
+            }
+            Err(e) => self
+                .messages
+                .push(Message::error(format!("Cannot clear the cache: {e}"))),
+        }
+    }
+
+    pub fn domain(&self, host: &str, name: &str) -> Option<(&Domain, bool)> {
+        let s = self.hosts.get(host)?.shown.as_ref()?;
+        let d = s.inventory.domains.iter().find(|d| d.name == name)?;
+        Some((d, s.cached))
+    }
+
+    fn state_color(&self, c: StateColor) -> Color32 {
+        theme::c(match c {
+            StateColor::Running => self.palette.state_running,
+            StateColor::Paused => self.palette.state_paused,
+            StateColor::Stopped => self.palette.state_stopped,
+            StateColor::Error => self.palette.state_error,
+        })
+    }
+
+    fn status_text(&self, s: &HostStatus) -> RichText {
+        let p = &self.palette;
+        match s {
+            HostStatus::Ok(at) => RichText::new(format!("ok, {}", format_age(*at, now_secs())))
+                .color(theme::c(p.state_running)),
+            HostStatus::Error(_) => RichText::new("error").color(theme::c(p.state_error)),
+            other => RichText::new(other.label()).color(theme::c(p.weak_text)),
+        }
+    }
+
+    // ---- drawing -------------------------------------------------------
+
+    /// Draw the whole window into `ui`.
+    pub fn show(&mut self, ui: &mut egui::Ui) {
+        self.poll();
+        let ctx = ui.ctx().clone();
+        egui::Panel::top("toolbar").show(ui, |ui| {
+            self.toolbar(ui);
+            self.messages_bar(ui);
+        });
+        egui::Panel::left("tree")
+            .resizable(true)
+            .default_size(300.0)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| self.tree(ui));
+            });
+        egui::CentralPanel::default().show(ui, |ui| {
+            egui::ScrollArea::both()
+                .auto_shrink([false, false])
+                .show(ui, |ui| self.details(ui));
+        });
+        self.host_form_window(&ctx);
+        self.remove_dialog(&ctx);
+        self.settings_window(&ctx);
+        self.prompt_dialog(&ctx);
+    }
+
+    fn toolbar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
+            ui.strong(format!("{} {}", vi_core::APP_NAME, vi_core::VERSION));
+            ui.separator();
+            let sel = self.selection.host().map(str::to_string);
+            let busy = sel
+                .as_deref()
+                .and_then(|h| self.hosts.get(h))
+                .is_some_and(|e| e.status.busy());
+            if ui
+                .add_enabled(
+                    sel.is_some() && !busy,
+                    egui::Button::new("Refresh selected"),
+                )
+                .on_hover_text("Refresh the inventory of the selected host")
+                .clicked()
+                && let Some(h) = &sel
+            {
+                self.refresh(h);
+            }
+            if ui
+                .add_enabled(
+                    !self.store.config.hosts.is_empty(),
+                    egui::Button::new("Refresh all"),
+                )
+                .clicked()
+            {
+                self.refresh_all();
+            }
+            if ui.button("Add host…").clicked() {
+                self.host_form = Some(HostForm::new_host());
+            }
+            if ui.button("Settings…").clicked() {
+                self.settings_open = true;
+            }
+            if ui
+                .button("Reload config")
+                .on_hover_text("Read the config file again")
+                .clicked()
+            {
+                let ctx = ui.ctx().clone();
+                self.reload_config(&ctx);
+            }
+            ui.separator();
+            ui.label("Filter:");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.filter.text)
+                    .hint_text("VM name")
+                    .desired_width(140.0),
+            );
+            egui::ComboBox::from_id_salt("state-filter")
+                .selected_text(self.filter.state.label())
+                .show_ui(ui, |ui| {
+                    for f in StateFilter::ALL {
+                        ui.selectable_value(&mut self.filter.state, f, f.label());
+                    }
+                });
+            if self.filter.is_active() && ui.button("Clear filter").clicked() {
+                self.filter = Filter::default();
+            }
+        });
+    }
+
+    fn messages_bar(&mut self, ui: &mut egui::Ui) {
+        let mut dismiss = None;
+        for (i, m) in self.messages.iter().enumerate() {
+            ui.horizontal_wrapped(|ui| {
+                let color = if m.is_error {
+                    theme::c(self.palette.state_error)
+                } else {
+                    theme::c(self.palette.text)
+                };
+                ui.colored_label(color, &m.text);
+                if ui.small_button("Dismiss").clicked() {
+                    dismiss = Some(i);
+                }
+            });
+        }
+        if let Some(i) = dismiss {
+            self.messages.remove(i);
+        }
+    }
+
+    fn tree(&mut self, ui: &mut egui::Ui) {
+        if self.store.config.hosts.is_empty() {
+            ui.label("No hosts configured.");
+            if ui.button("Add host…").clicked() {
+                self.host_form = Some(HostForm::new_host());
+            }
+            return;
+        }
+        let hosts: Vec<String> = self
+            .store
+            .config
+            .hosts
+            .iter()
+            .map(|h| h.name.clone())
+            .collect();
+        let mut new_sel = None;
+        for name in hosts {
+            let Some(entry) = self.hosts.get(&name) else {
+                continue;
+            };
+            let id = ui.make_persistent_id(("host", &name));
+            let status = self.status_text(&entry.status);
+            let selected = self.selection == Selection::Host(name.clone());
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+                .show_header(ui, |ui| {
+                    if ui
+                        .selectable_label(selected, RichText::new(&name).strong())
+                        .clicked()
+                    {
+                        new_sel = Some(Selection::Host(name.clone()));
+                    }
+                    ui.label(status);
+                    if entry.shown.as_ref().is_some_and(|s| s.cached) {
+                        ui.label(RichText::new("(cached)").color(theme::c(self.palette.weak_text)));
+                    }
+                })
+                .body(|ui| match &entry.shown {
+                    None => {
+                        ui.label(
+                            RichText::new("not loaded yet; use Refresh")
+                                .color(theme::c(self.palette.weak_text)),
+                        );
+                    }
+                    Some(s) => {
+                        let mut any = false;
+                        for d in s
+                            .inventory
+                            .domains
+                            .iter()
+                            .filter(|d| self.filter.matches(d))
+                        {
+                            any = true;
+                            let sel =
+                                self.selection == Selection::Domain(name.clone(), d.name.clone());
+                            let (badge, col) = view::state_badge(&d.state);
+                            ui.horizontal(|ui| {
+                                if ui.selectable_label(sel, &d.name).clicked() {
+                                    new_sel = Some(Selection::Domain(name.clone(), d.name.clone()));
+                                }
+                                ui.label(RichText::new(badge).color(self.state_color(col)));
+                                if d.error.is_some() {
+                                    ui.label(
+                                        RichText::new("(error)")
+                                            .color(theme::c(self.palette.state_error)),
+                                    );
+                                }
+                            });
+                        }
+                        if !any {
+                            let t = if s.inventory.domains.is_empty() {
+                                "no VMs"
+                            } else {
+                                "no VM matches the filter"
+                            };
+                            ui.label(RichText::new(t).color(theme::c(self.palette.weak_text)));
+                        }
+                    }
+                });
+        }
+        if let Some(s) = new_sel {
+            self.selection = s;
+        }
+    }
+
+    fn details(&mut self, ui: &mut egui::Ui) {
+        match self.selection.clone() {
+            Selection::None => {
+                ui.heading("Select a host or a VM");
+                ui.label("Hosts are listed on the left. Use Refresh to read their VMs over SSH.");
+            }
+            Selection::Host(h) => self.host_details(ui, &h),
+            Selection::Domain(h, d) => self.domain_details(ui, &h, &d),
+        }
+    }
+
+    fn host_details(&mut self, ui: &mut egui::Ui, name: &str) {
+        let (Some(cfg), Some(entry)) = (
+            self.host_config(name).cloned(),
+            self.hosts.get(name).cloned(),
+        ) else {
+            return;
+        };
+        ui.heading(&cfg.name);
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(!entry.status.busy(), egui::Button::new("Refresh"))
+                .clicked()
+            {
+                self.refresh(name);
+            }
+            if ui.button("Edit…").clicked() {
+                self.host_form = Some(HostForm::edit(&cfg));
+            }
+            if ui.button("Remove…").clicked() {
+                self.confirm_remove = Some(name.to_string());
+            }
+        });
+        ui.add_space(6.0);
+        let none = "default";
+        egui::Grid::new("host-grid")
+            .num_columns(2)
+            .striped(true)
+            .show(ui, |ui| {
+                row(ui, "Host", cfg.host.clone());
+                row(
+                    ui,
+                    "Port",
+                    cfg.port.map_or_else(|| none.into(), |p| p.to_string()),
+                );
+                row(ui, "User", cfg.user.clone().unwrap_or_else(|| none.into()));
+                row(
+                    ui,
+                    "Identity file",
+                    cfg.identity_file
+                        .as_ref()
+                        .map_or_else(|| none.into(), |p| p.display().to_string()),
+                );
+                row(ui, "libvirt URI", cfg.libvirt_uri.clone());
+                row(
+                    ui,
+                    "virsh prefix",
+                    cfg.virsh_prefix.clone().unwrap_or_else(|| "none".into()),
+                );
+                row(ui, "Status", self.status_text(&entry.status));
+                if let Some(s) = &entry.shown {
+                    row(
+                        ui,
+                        "libvirt",
+                        s.inventory
+                            .library
+                            .clone()
+                            .unwrap_or_else(|| "unknown".into()),
+                    );
+                    row(
+                        ui,
+                        "Hypervisor",
+                        s.inventory
+                            .hypervisor
+                            .clone()
+                            .unwrap_or_else(|| "unknown".into()),
+                    );
+                    row(ui, "VMs", s.inventory.domains.len().to_string());
+                    row(
+                        ui,
+                        "Inventory",
+                        format!(
+                            "{}, taken {} ({})",
+                            if s.cached { "cached" } else { "live" },
+                            format_utc(s.taken_at),
+                            format_age(s.taken_at, now_secs())
+                        ),
+                    );
+                }
+            });
+        if let HostStatus::Error(e) = &entry.status {
+            ui.add_space(6.0);
+            ui.label(RichText::new(&e.message).color(theme::c(self.palette.state_error)));
+            if let Some(d) = &e.detail {
+                ui.collapsing("Details", |ui| {
+                    ui.monospace(d);
+                });
+            }
+        }
+        if let Some(s) = &entry.shown
+            && !s.inventory.warnings.is_empty()
+        {
+            ui.add_space(6.0);
+            ui.collapsing(format!("Warnings ({})", s.inventory.warnings.len()), |ui| {
+                for w in &s.inventory.warnings {
+                    ui.label(w);
+                }
+            });
+        }
+    }
+
+    fn domain_details(&mut self, ui: &mut egui::Ui, host: &str, name: &str) {
+        let Some((d, cached)) = self.domain(host, name).map(|(d, c)| (d.clone(), c)) else {
+            ui.label("This VM is no longer in the inventory.");
+            return;
+        };
+        let (badge, col) = view::state_badge(&d.state);
+        ui.horizontal(|ui| {
+            ui.heading(&d.name);
+            ui.label(RichText::new(badge).color(self.state_color(col)).strong());
+            if cached {
+                ui.label(RichText::new("(cached)").color(theme::c(self.palette.weak_text)));
+            }
+        });
+        ui.label(format!("on {host}"));
+        if let Some(e) = &d.error {
+            ui.label(RichText::new(e).color(theme::c(self.palette.state_error)));
+        }
+        egui::Grid::new("dom-grid")
+            .num_columns(2)
+            .striped(true)
+            .show(ui, |ui| {
+                row(
+                    ui,
+                    "UUID",
+                    d.uuid.clone().unwrap_or_else(|| "unknown".into()),
+                );
+                row(ui, "ID", view::opt_text(&d.id));
+                row(ui, "Persistent", view::yes_no(d.persistent));
+                row(ui, "Autostart", view::yes_no(d.autostart));
+            });
+        let Some(x) = &d.details else { return };
+        self.components(ui, x);
+    }
+
+    fn components(&self, ui: &mut egui::Ui, x: &DomainDetails) {
+        let g = &x.general;
+        egui::CollapsingHeader::new("General")
+            .default_open(true)
+            .show(ui, |ui| {
+                egui::Grid::new("general")
+                    .num_columns(2)
+                    .striped(true)
+                    .show(ui, |ui| {
+                        row(
+                            ui,
+                            "Guest OS",
+                            g.guest_os().unwrap_or("unknown").to_string(),
+                        );
+                        row(ui, "Firmware", g.firmware.label().to_string());
+                        row(ui, "Hypervisor type", view::opt_text(&g.domain_type));
+                        row(ui, "OS type", view::opt_text(&g.os_type));
+                        row(ui, "Architecture", view::opt_text(&g.arch));
+                        row(ui, "Machine", view::opt_text(&g.machine));
+                        if let Some(t) = &g.title {
+                            row(ui, "Title", t.clone());
+                        }
+                        if let Some(t) = &g.description {
+                            row(ui, "Description", t.clone());
+                        }
+                    });
+            });
+        egui::CollapsingHeader::new("CPU and memory")
+            .default_open(true)
+            .show(ui, |ui| {
+                egui::Grid::new("cpu")
+                    .num_columns(2)
+                    .striped(true)
+                    .show(ui, |ui| {
+                        let c = &x.cpu;
+                        row(
+                            ui,
+                            "vCPUs",
+                            format!(
+                                "{} (max {})",
+                                view::opt_text(&c.current),
+                                view::opt_text(&c.max)
+                            ),
+                        );
+                        row(ui, "CPU mode", view::opt_text(&c.mode));
+                        if let Some(m) = &c.model {
+                            row(ui, "CPU model", m.clone());
+                        }
+                        if let Some(t) = &c.topology {
+                            row(
+                                ui,
+                                "Topology",
+                                format!(
+                                    "{} sockets, {} dies, {} cores, {} threads",
+                                    view::opt_text(&t.sockets),
+                                    view::opt_text(&t.dies),
+                                    view::opt_text(&t.cores),
+                                    view::opt_text(&t.threads)
+                                ),
+                            );
+                        }
+                        row(ui, "Memory (max)", view::kib_text(x.memory.max_kib));
+                        row(ui, "Memory (current)", view::kib_text(x.memory.current_kib));
+                        row(
+                            ui,
+                            "Hugepages",
+                            if x.memory.hugepages { "yes" } else { "no" },
+                        );
+                    });
+            });
+        egui::CollapsingHeader::new(format!("Disks ({})", x.disks.len()))
+            .default_open(true)
+            .show(ui, |ui| {
+                egui::Grid::new("disks")
+                    .num_columns(6)
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for h in ["Target", "Device", "Bus", "Source", "Format", "Size"] {
+                            ui.strong(h);
+                        }
+                        ui.end_row();
+                        for k in &x.disks {
+                            ui.label(k.target.clone().unwrap_or_else(|| "?".into()));
+                            let mut dev = k.device.clone();
+                            if k.readonly {
+                                dev.push_str(", read-only");
+                            }
+                            if k.shareable {
+                                dev.push_str(", shared");
+                            }
+                            ui.label(dev);
+                            ui.label(k.bus.clone().unwrap_or_else(|| "?".into()));
+                            ui.label(k.source.describe());
+                            ui.label(k.format.clone().unwrap_or_else(|| "-".into()));
+                            ui.label(view::disk_size_text(k));
+                            ui.end_row();
+                        }
+                    });
+            });
+        egui::CollapsingHeader::new(format!("Network interfaces ({})", x.interfaces.len()))
+            .default_open(true)
+            .show(ui, |ui| {
+                egui::Grid::new("nics")
+                    .num_columns(5)
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for h in ["Type", "Source", "MAC", "Model", "Host device"] {
+                            ui.strong(h);
+                        }
+                        ui.end_row();
+                        for n in &x.interfaces {
+                            ui.label(&n.kind);
+                            ui.label(n.source.clone().unwrap_or_else(|| "-".into()));
+                            ui.label(n.mac.clone().unwrap_or_else(|| "-".into()));
+                            ui.label(n.model.clone().unwrap_or_else(|| "-".into()));
+                            ui.label(n.target_dev.clone().unwrap_or_else(|| "-".into()));
+                            ui.end_row();
+                        }
+                    });
+            });
+        egui::CollapsingHeader::new(format!("Graphics ({})", x.graphics.len()))
+            .default_open(true)
+            .show(ui, |ui| {
+                egui::Grid::new("gfx")
+                    .num_columns(5)
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for h in ["Type", "Listen", "Port", "TLS port", "Remote"] {
+                            ui.strong(h);
+                        }
+                        ui.end_row();
+                        for gr in &x.graphics {
+                            ui.label(&gr.kind);
+                            ui.label(gr.listen.describe());
+                            ui.label(gr.port.map_or_else(
+                                || {
+                                    if gr.autoport {
+                                        "auto".into()
+                                    } else {
+                                        "-".into()
+                                    }
+                                },
+                                |p| p.to_string(),
+                            ));
+                            ui.label(gr.tls_port.map_or_else(|| "-".into(), |p| p.to_string()));
+                            ui.label(if gr.reachable() {
+                                "reachable via tunnel (v1.1)"
+                            } else {
+                                "not reachable remotely"
+                            });
+                            ui.end_row();
+                        }
+                    });
+            });
+        let grouped = view::group_devices(&x.other_devices);
+        egui::CollapsingHeader::new(format!("Other devices ({})", x.other_devices.len()))
+            .default_open(false)
+            .show(ui, |ui| {
+                egui::Grid::new("other")
+                    .num_columns(3)
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for (dev, n) in grouped {
+                            ui.label(&dev.kind);
+                            ui.label(&dev.summary);
+                            ui.label(if n > 1 {
+                                format!("×{n}")
+                            } else {
+                                String::new()
+                            });
+                            ui.end_row();
+                        }
+                    });
+            });
+        egui::CollapsingHeader::new("Raw XML")
+            .default_open(false)
+            .show(ui, |ui| {
+                if ui.button("Copy to clipboard").clicked() {
+                    ui.ctx().copy_text(x.xml.clone());
+                }
+                let mut text = x.xml.as_str();
+                ui.add(
+                    egui::TextEdit::multiline(&mut text)
+                        .code_editor()
+                        .desired_width(f32::INFINITY),
+                );
+            });
+    }
+
+    fn contrast_control(&mut self, ui: &mut egui::Ui) {
+        let level = self.store.config.ui.contrast;
+        let current = match level {
+            ContrastLevel::Aa => ContrastChoice::Aa,
+            ContrastLevel::Aaa => ContrastChoice::Aaa,
+            ContrastLevel::Max => ContrastChoice::Max,
+            ContrastLevel::Custom(_) => ContrastChoice::Custom,
+        };
+        let mut choice = current;
+        ui.label("Contrast:");
+        egui::ComboBox::from_id_salt("contrast")
+            .selected_text(level.label())
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut choice, ContrastChoice::Aa, "AA (4.5:1)");
+                ui.selectable_value(&mut choice, ContrastChoice::Aaa, "AAA (7:1)");
+                ui.selectable_value(&mut choice, ContrastChoice::Max, "Max (21:1)");
+                ui.selectable_value(&mut choice, ContrastChoice::Custom, "Custom…");
+            });
+        if choice == ContrastChoice::Custom {
+            let resp = ui.add(
+                egui::DragValue::new(&mut self.custom_ratio)
+                    .range(MIN_RATIO..=MAX_RATIO)
+                    .speed(0.1)
+                    .fixed_decimals(1)
+                    .suffix(":1"),
+            );
+            if choice != current || resp.changed() {
+                let (lvl, _) = ContrastLevel::custom(self.custom_ratio);
+                self.set_contrast(ui.ctx(), lvl);
+            }
+        } else if choice != current {
+            let lvl = match choice {
+                ContrastChoice::Aa => ContrastLevel::Aa,
+                ContrastChoice::Aaa => ContrastLevel::Aaa,
+                _ => ContrastLevel::Max,
+            };
+            self.set_contrast(ui.ctx(), lvl);
+        }
+        ui.label(format!("(lowest pair {:.1}:1)", self.palette.worst_ratio()));
+    }
+
+    fn settings_window(&mut self, ctx: &egui::Context) {
+        if !self.settings_open {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Settings")
+            .open(&mut open)
+            .resizable(false)
+            .default_width(560.0)
+            .max_width(560.0)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| self.contrast_control(ui));
+                ui.add_space(8.0);
+                egui::Grid::new("settings").num_columns(2).show(ui, |ui| {
+                    ui.label("Config file");
+                    ui.add(egui::Label::new(self.store.path.display().to_string()).wrap());
+                    ui.end_row();
+                    ui.label("SSH timeouts");
+                    ui.label(format!(
+                        "connect {} s, command {} s (edit in the config file)",
+                        self.store.config.ssh.connect_timeout_secs,
+                        self.store.config.ssh.command_timeout_secs
+                    ));
+                    ui.end_row();
+                    ui.label("Cache");
+                    ui.add(
+                        egui::Label::new(
+                            self.cache
+                                .as_ref()
+                                .map_or_else(|| "none".into(), |c| c.dir().display().to_string()),
+                        )
+                        .wrap(),
+                    );
+                    ui.end_row();
+                });
+                if self.cache.is_some() && ui.button("Clear cache").clicked() {
+                    self.clear_cache();
+                }
+            });
+        self.settings_open = open;
+    }
+
+    fn host_form_window(&mut self, ctx: &egui::Context) {
+        let Some(form) = &mut self.host_form else {
+            return;
+        };
+        let title = if form.original.is_some() {
+            "Edit host"
+        } else {
+            "Add host"
+        };
+        let mut save = false;
+        let mut cancel = false;
+        let err_color = theme::c(self.palette.state_error);
+        egui::Modal::new(egui::Id::new("host-form"))
+            .backdrop_color(Color32::TRANSPARENT)
+            .show(ctx, |ui| {
+                ui.set_width(460.0);
+                ui.heading(title);
+                egui::Grid::new("host-form-grid")
+                    .num_columns(2)
+                    .show(ui, |ui| {
+                        let mut field = |label: &str, value: &mut String, hint: &str| {
+                            ui.label(label);
+                            ui.add(
+                                egui::TextEdit::singleline(value)
+                                    .hint_text(hint)
+                                    .desired_width(280.0),
+                            );
+                            ui.end_row();
+                        };
+                        field("Name *", &mut form.name, "display name, unique");
+                        field(
+                            "Host *",
+                            &mut form.host,
+                            "hostname, IP or ~/.ssh/config alias",
+                        );
+                        field("Port", &mut form.port, "from ssh config, else 22");
+                        field("User", &mut form.user, "from ssh config, else local user");
+                        field(
+                            "Identity file",
+                            &mut form.identity_file,
+                            "agent / ssh config / default keys",
+                        );
+                        field("libvirt URI", &mut form.libvirt_uri, "qemu:///system");
+                        field("virsh prefix", &mut form.virsh_prefix, "e.g. sudo -n");
+                    });
+                if let Some(e) = &form.error {
+                    ui.label(RichText::new(e).color(err_color));
+                }
+                ui.horizontal(|ui| {
+                    save = ui.button("Save").clicked();
+                    cancel = ui.button("Cancel").clicked();
+                });
+            });
+        if cancel {
+            self.host_form = None;
+        } else if save {
+            self.submit_host_form();
+        }
+    }
+
+    fn remove_dialog(&mut self, ctx: &egui::Context) {
+        let Some(name) = self.confirm_remove.clone() else {
+            return;
+        };
+        let mut answer = None;
+        egui::Modal::new(egui::Id::new("remove-host"))
+            .backdrop_color(Color32::TRANSPARENT)
+            .show(ctx, |ui| {
+                ui.label(format!(
+                    "Remove host \"{name}\" from the config? Its cached inventory is deleted too."
+                ));
+                ui.horizontal(|ui| {
+                    if ui.button("Remove").clicked() {
+                        answer = Some(true);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        answer = Some(false);
+                    }
+                });
+            });
+        if let Some(yes) = answer {
+            self.confirm_remove = None;
+            if yes {
+                self.remove_host(&name);
+            }
+        }
+    }
+
+    fn prompt_dialog(&mut self, ctx: &egui::Context) {
+        let Some(p) = &mut self.open_prompt else {
+            return;
+        };
+        enum Answer {
+            HostKey(bool),
+            Passphrase(bool),
+        }
+        let mut answer = None;
+        let weak = theme::c(self.palette.weak_text);
+        egui::Modal::new(egui::Id::new("ssh-prompt"))
+            .backdrop_color(Color32::TRANSPARENT)
+            .show(ctx, |ui| {
+                ui.set_width(460.0);
+                match &p.request.kind {
+                    PromptKind::HostKey(k) => {
+                        ui.heading("Unknown host key");
+                        ui.label(format!(
+                            "The authenticity of host \"{}\" ({} port {}) can't be established.",
+                            k.name, k.hostname, k.port
+                        ));
+                        ui.label(format!("{} key fingerprint:", k.key_type));
+                        ui.monospace(&k.fingerprint);
+                        if !k.other_types.is_empty() {
+                            ui.label(format!(
+                                "known_hosts already has keys of other types for this host: {}",
+                                k.other_types.join(", ")
+                            ));
+                        }
+                        ui.label(
+                            RichText::new(
+                                "Compare the fingerprint with the host before accepting.",
+                            )
+                            .color(weak),
+                        );
+                        ui.horizontal(|ui| {
+                            if ui.button("Accept and remember").clicked() {
+                                answer = Some(Answer::HostKey(true));
+                            }
+                            if ui.button("Reject").clicked() {
+                                answer = Some(Answer::HostKey(false));
+                            }
+                        });
+                    }
+                    PromptKind::Passphrase(path) => {
+                        ui.heading("Key passphrase");
+                        ui.label(format!("Passphrase for {}", path.display()));
+                        let r = ui.add(
+                            egui::TextEdit::singleline(&mut p.passphrase)
+                                .password(true)
+                                .desired_width(280.0),
+                        );
+                        r.request_focus();
+                        let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        ui.horizontal(|ui| {
+                            if ui.button("OK").clicked() || enter {
+                                answer = Some(Answer::Passphrase(true));
+                            }
+                            if ui.button("Skip this key").clicked() {
+                                answer = Some(Answer::Passphrase(false));
+                            }
+                        });
+                    }
+                }
+            });
+        if let Some(a) = answer {
+            let OpenPrompt {
+                request,
+                mut passphrase,
+            } = self.open_prompt.take().expect("prompt");
+            match a {
+                Answer::HostKey(yes) => request.answer_host_key(yes),
+                Answer::Passphrase(true) if !passphrase.is_empty() => {
+                    request.answer_passphrase(Some(Secret::new(std::mem::take(&mut passphrase))))
+                }
+                Answer::Passphrase(_) => request.answer_passphrase(None),
+            }
+        }
+    }
+}
+
+/// One label/value row of a two-column grid.
+fn row(ui: &mut egui::Ui, k: &str, v: impl Into<egui::WidgetText>) {
+    ui.label(k);
+    ui.label(v);
+    ui.end_row();
+}
+
+impl eframe::App for App {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.show(ui);
+    }
+}

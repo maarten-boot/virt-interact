@@ -19,6 +19,7 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
 - The palette is generated for the chosen minimum: backgrounds are lightened toward white and foregrounds darkened toward black until every pair reaches it. The toolbar shows the lowest ratio of all pairs in the current palette.
 - A change made interactively is saved back to the config file.
 - Disabled widgets are not shown by fading (that would lower the contrast). They use the palette's disabled text colour, which meets the minimum.
+- Nothing else fades either: text at the edge of a scrolled area is drawn at full contrast (egui's scroll-edge fade is off). Dialogs do not dim the window behind them.
 
 ### SPEC-002: Target platforms (v1)
 - Runs on Windows 10+ (x86_64), Linux (x86_64), and macOS 12+ (x86_64 and aarch64). CI builds all of them; macOS x86_64 is cross-compiled on an aarch64 runner (build only, no tests).
@@ -71,7 +72,7 @@ Each host has these fields:
 - Agent keys that match a configured key file (recognised by its `.pub`) are offered first, so an agent with many keys does not use up the server's `MaxAuthTries` before the right key.
 - If the server closes the connection during authentication (e.g. too many attempts), the error still lists the keys tried, with a note that the server hung up.
 - Password authentication and keyboard-interactive authentication are never used.
-- If a key file is encrypted, the GUI asks for its passphrase. The SSH layer uses it for one connection attempt and then wipes it; the GUI may keep it in memory while the app runs so a reconnect does not ask again (Plan 4.3). It is never written to disk or to logs.
+- If a key file is encrypted, the GUI asks for its passphrase. The SSH layer uses it for one connection attempt and then wipes it; the GUI does not keep it. Instead the SSH connection of each host stays open while the app runs, so a later refresh does not ask again; the connection is dropped when the host is edited or removed, when the config is reloaded, or when it breaks (the app then reconnects once). It is never written to disk or to logs.
 - SSH is implemented with `russh` (crypto backend `ring`, so no C toolchain/cmake is needed on Windows). There is no dependency on an external `ssh` binary.
 - A key that the agent already offered is not tried again from its file, so its passphrase is not asked for needlessly (the `.pub` next to the key file is used to recognise it).
 - RSA keys use `rsa-sha2-512`/`-256` signatures when the server supports them.
@@ -133,6 +134,8 @@ Parsing is tolerant (see `tests/fixtures/`):
 - Hosts are queried in parallel. A slow or failing host does not delay the others.
 - Within one host, up to 4 domains are queried at the same time, each on its own channel of the one SSH connection. Results keep the order of `virsh list`.
 - Each host shows its status: idle, connecting, refreshing, ok (with a timestamp), or error.
+- There is no automatic refresh at startup (it could ask for passphrases or host keys before the user does anything). At startup the cached inventory is shown (SPEC-014).
+- A refresh of a host that is already refreshing is ignored.
 - The connect timeout and the command timeout can be configured in `[ssh]` (`connect_timeout_secs`, `command_timeout_secs`; defaults 10 s and 30 s).
 - The connect timeout applies separately to the TCP connect, the SSH handshake and each authentication attempt. Time spent waiting for the user (host key question, passphrase) is not counted. The command timeout applies to each remote command; after a timeout the connection stays usable.
 
@@ -153,7 +156,8 @@ Scope of an error:
 - A failing `domblkinfo` only makes that disk's size "unknown"; if it timed out, a warning names the disk (e.g. a hanging network disk).
 
 ### SPEC-014: Inventory cache (v1)
-- The last successful inventory of each host is saved as JSON in the platform cache directory.
+- The last successful inventory of each host is saved as JSON in the platform cache directory (`<cache_dir>/virt-interact/inventory-<name>-<hash>.json`, one file per host). A damaged file, or one from another format version, is ignored.
+- After a failed refresh the last inventory stays visible, marked "cached".
 - At startup, and when a host is unreachable, the cached inventory is shown, clearly marked as "cached" with its timestamp.
 - The user can clear the cache.
 
@@ -162,7 +166,10 @@ Scope of an error:
 ### SPEC-015: Main window layout (v1)
 - **Left:** a tree of hosts, with the VMs of each host under it. Each VM shows a state indicator. The indicator uses an icon or text as well as colour, so it does not rely on colour alone.
 - **Right:** the details of the selected item. For a host: connection info and status. For a VM: the sections from SPEC-010.
-- **Toolbar:** refresh selected, refresh all, add host, settings (including contrast, SPEC-001).
+- **Toolbar:** refresh selected, refresh all, add host, settings, reload config, and the filter.
+- **Settings window:** contrast (SPEC-001), the config and cache locations, the SSH timeouts (read-only; edited in the config file), clear cache.
+- **Host details:** connection settings, status with the error message and its detail, libvirt and hypervisor version, number of VMs, whether the inventory is live or cached and when it was taken, warnings; Refresh, Edit and Remove (with confirmation).
+- **VM details:** identical other devices are grouped with a count; an empty cdrom shows "empty drive".
 - **Filter:** by VM name (substring) and by state.
 
 ### SPEC-016: Logging (v1)

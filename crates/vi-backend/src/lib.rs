@@ -7,6 +7,8 @@ pub mod error;
 pub mod libvirt;
 pub mod parse;
 
+use std::time::Duration;
+
 use vi_core::config::{Backend, HostConfig};
 use vi_core::model::HostInventory;
 use vi_ssh::CommandRunner;
@@ -29,8 +31,23 @@ pub trait HypervisorBackend: Send + Sync {
 
 /// The backend configured for `host`.
 pub fn for_host(host: &HostConfig) -> Result<Box<dyn HypervisorBackend>, BackendError> {
+    for_host_with(host, None)
+}
+
+/// Like [`for_host`], with an extra per-command time limit enforced by the
+/// backend (on top of any limit of the runner).
+pub fn for_host_with(
+    host: &HostConfig,
+    command_timeout: Option<Duration>,
+) -> Result<Box<dyn HypervisorBackend>, BackendError> {
     match host.backend {
-        Backend::Libvirt => Ok(Box::new(LibvirtBackend::from_host(host)?)),
+        Backend::Libvirt => {
+            let mut b = LibvirtBackend::from_host(host)?;
+            if let Some(t) = command_timeout {
+                b = b.with_command_timeout(t);
+            }
+            Ok(Box::new(b))
+        }
     }
 }
 
@@ -48,5 +65,44 @@ mod tests {
             for_host(&h).err().map(|e| e.kind()),
             Some(BackendErrorKind::Config)
         );
+    }
+
+    /// A second backend needs nothing but the trait (TC-090).
+    struct Dummy;
+
+    impl HypervisorBackend for Dummy {
+        fn name(&self) -> &'static str {
+            "dummy"
+        }
+        fn inventory<'a>(
+            &'a self,
+            _: &'a dyn CommandRunner,
+        ) -> BoxFuture<'a, Result<HostInventory, BackendError>> {
+            Box::pin(async {
+                Ok(HostInventory {
+                    domains: vec![vi_core::model::Domain::new(
+                        "d",
+                        vi_core::model::DomainState::Running,
+                    )],
+                    ..HostInventory::default()
+                })
+            })
+        }
+    }
+
+    // TC-090
+    #[tokio::test]
+    async fn dummy_backend_through_the_trait() {
+        let backends: Vec<Box<dyn HypervisorBackend>> = vec![
+            Box::new(Dummy),
+            for_host(&HostConfig::new("a", "h")).unwrap(),
+        ];
+        let names: Vec<_> = backends.iter().map(|b| b.name()).collect();
+        assert_eq!(names, ["dummy", "libvirt"]);
+        let inv = backends[0]
+            .inventory(&vi_ssh::MockRunner::new())
+            .await
+            .unwrap();
+        assert_eq!(inv.domains[0].name, "d");
     }
 }

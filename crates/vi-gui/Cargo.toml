@@ -7,15 +7,24 @@ rust-version.workspace = true
 repository.workspace = true
 publish = false
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "virt-interact"
 path = "src/main.rs"
 
 [dependencies]
 vi-core.workspace = true
+vi-ssh.workspace = true
 vi-backend.workspace = true
 eframe.workspace = true
 tracing.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time"] }
+dirs.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

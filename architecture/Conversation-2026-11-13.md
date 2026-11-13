@@ -149,3 +149,29 @@ Spec updates made while implementing (no change to agreed behaviour, but new det
 **User:** Pushed phase 3 and the crosscheck 03 fixes.
 
 **Claude:** Run 43521068892: all four jobs pass. 89 tests pass on Linux, macOS and MSRV 1.92; 88 on Windows, where the unix-only `sh` quoting test does not run. TC-010 updated. Open: the user's real-host check (TC-048, Plan 3.6), plus the earlier manual checks.
+
+## 16. Phase 4 start; real-host result
+**User:** Start phase 4. While it was in progress, shared the output of the `inventory` example run against a real host (kept in the git-ignored `tmp/`; no names from it are used in the repo).
+
+**Claude:** TC-048 passes without a prefix. The output shows libvirt 12.0.0 and 7 VMs, matching the host, with state, UUID, firmware, guest OS, CPU, memory, NICs and graphics all correct. All disk sizes are read, so the read-only connection allows `domblkinfo`. Still open: a run with `--prefix "sudo -n"`. Two display points for phase 4: identical "other devices" (e.g. 15 `pcie-root-port` controllers) should be grouped with a count, and an empty cdrom should say "empty drive" rather than "size unknown".
+
+**Claude (phase 4):** Implemented the GUI:
+- `vi-core/src/cache.rs`: cache, one JSON file per host; damaged files are ignored.
+- `vi-gui/src/worker.rs`: background refresh on a tokio runtime. The SSH connection of each host is kept open; a dead one triggers one reconnect.
+- `prompts.rs`: host key and passphrase dialogs, connected through channels.
+- `view.rs`: filter, state labels, device grouping, size text.
+- `app.rs`: main window, tree, details, host form, remove confirmation, settings, reload config.
+
+`vi-gui` is now a library plus a thin binary, so tests can drive the app and draw every view without a display (Plan 4.7). The worker uses only the backend trait (TC-090).
+
+Design choices (now in the Spec): no automatic refresh at startup, because it could ask for passphrases before the user does anything; the cache is shown instead. Passphrases are not kept; the open connection makes re-asking unnecessary.
+
+Smoke test under Xvfb with screenshots. It found and fixed:
+- egui fades text at scroll-area edges, below the contrast minimum. Now turned off, with a test; same class of problem as `disabled_alpha` in crosscheck 01.
+- The add-host form was too narrow.
+- Settings paths did not wrap.
+- A form error used internal wording.
+
+Also confirmed visually: a refresh against an unreachable host shows a plain error and keeps the cached inventory; a contrast change to Max applies at once and is saved.
+
+107 tests pass; fmt and clippy are clean; every test is cited. Open: a manual check on a real desktop against a real host (Plan 4.9).

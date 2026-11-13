@@ -65,16 +65,18 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
   - New captures: `inventory --save DIR <host>` (into the git-ignored `tmp/`), then `scripts/anonymise_fixtures.py DIR tests/fixtures/<set> --leak <hostname>`; review by eye before committing.
   - Still missing: UEFI (no UEFI VM available at the moment), a socket listen on a running VM, a network/volume disk, hostdev, and a host with stopped VMs in `list --all`. Until then these cases are tested with small synthetic XML in `domxml.rs`.
 - [x] 3.7 Crosscheck 03 fixes: per-domain timeouts, exit status 126, network listen address, up to 4 domains in parallel per host, `inventory --save` and `scripts/anonymise_fixtures.py` for new captures. (2026-11-13)
-- [ ] 3.6 Real-host check (TC-048), by the user: `cargo run -p vi-backend --example inventory -- <host>`. Confirms that the read-only connection allows `domblkinfo`, and that the output matches `virsh list --all` on the host.
+- [~] 3.6 Real-host check (TC-048), by the user. Done without prefix (2026-11-13): all VMs and disk sizes correct. Open: a run with `--prefix "sudo -n"`. Command: `cargo run -p vi-backend --example inventory -- <host>`. Confirms that the read-only connection allows `domblkinfo`, and that the output matches `virsh list --all` on the host.
 
 ### Phase 4: GUI (SPEC-003, 005, 012, 014, 015)
-- [ ] 4.1 Main window: host/VM tree, detail panel, toolbar, filter.
-- [ ] 4.2 Background refresh per host with status; refresh all runs in parallel.
-- [ ] 4.3 Host add/edit/remove dialogs; dialogs for the host key prompt and the passphrase prompt (GUI `Prompter`; may keep passphrases in memory for the app session so reconnects do not ask again).
-- [ ] 4.4 Inventory cache: save, load and clear; "cached" marker.
-- [ ] 4.5 Settings dialog with the contrast control.
-- [ ] 4.6 "Reload config" action (SPEC-005: hosts added in the file appear after a reload).
-- [ ] 4.7 Automate TC-006: move `App` out of `main.rs` so a test can drive the contrast change and check the saved file.
+- [x] 4.1 Main window: host/VM tree, detail panel, toolbar, filter. (`vi-gui/src/app.rs`, `view.rs`)
+- [x] 4.2 Background refresh per host with status; refresh all runs in parallel; SSH connection kept per host. (`worker.rs`)
+- [x] 4.3 Host add/edit/remove dialogs; dialogs for the host key prompt and the passphrase prompt (`prompts.rs`). Passphrases are not kept; the open connection makes re-asking unnecessary.
+- [x] 4.4 Inventory cache: save, load and clear; "cached" marker. (`vi-core/src/cache.rs`)
+- [x] 4.5 Settings window with the contrast control.
+- [x] 4.6 "Reload config" action.
+- [x] 4.7 `vi-gui` is now a library plus a thin binary; `tests/app.rs` drives the app and renders every view headless (`Context::run_ui`).
+- [x] 4.8 Smoke test under Xvfb (2026-11-13). Found and fixed: egui fades text at scroll-area edges (contrast); dialog fields too narrow; settings paths not wrapped; form error wording.
+- [ ] 4.9 Manual check on a real desktop against a real host (TC-081, TC-006 on Windows/macOS): refresh, host key and passphrase dialogs, clipboard.
 
 ### Phase 5: Release v1
 - [ ] 5.1 Packaging: Windows (zip, later MSI), Linux (tar.gz, later AppImage/deb), macOS (.app; signing and notarization to be decided).
@@ -93,7 +95,7 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 |------|-----------|
 | russh agent support on Windows (named pipe / Pageant) | Source review (2.5): russh supports both, and both are used. Compiles and tests pass in CI (run 43509629083). Open: a manual run (TC-038). Fallback: key files with a passphrase prompt. |
 | virsh output and XML differ between libvirt versions | Fixtures from several versions; tolerant parser (unknown elements are ignored, not fatal). |
-| Read-only connection (`virsh -r`) and `LC_ALL=C` through `sudo -n` are not yet checked on a real host | TC-048, run with and without `--prefix`. If `domblkinfo` is refused on a read-only connection, sizes show as unknown (no failure); if sudo drops `LC_ALL`, non-English output would give parse problems. |
+| `LC_ALL=C` through `sudo -n` is not yet checked on a real host (`virsh -r` with `domblkinfo` is confirmed, TC-048) | TC-048 with `--prefix`. If `domblkinfo` is refused on a read-only connection, sizes show as unknown (no failure); if sudo drops `LC_ALL`, non-English output would give parse problems. |
 | `qemu:///system` permissions | Clear error message with a hint (SPEC-013); `virsh_prefix = "sudo -n"` option. |
 | macOS signing and notarization | Postpone to 5.1; an unsigned build is fine for development. |
 | No mature Rust SPICE client | v1.1 uses an external `remote-viewer`. |
