@@ -1,0 +1,14 @@
+[package]
+name = "vi-ssh"
+description = "virt-interact SSH: sessions, auth, known_hosts, command runner, tunnels"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+vi-core.workspace = true
+
+[lints]
+workspace = true

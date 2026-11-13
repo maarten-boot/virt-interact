@@ -27,3 +27,11 @@
 **Assumption (Claude):** The local inventory cache (question 3) was not answered explicitly. It is included in v1 as SPEC-014 and can be dropped if not wanted.
 
 **Claude:** Wrote Spec.md (SPEC-001 to SPEC-019), Plan.md (phases 0–6, crates, risks) and TestCases.md (TC-001 to TC-103, traced to the Spec). Switched `.gitignore` to Rust.
+
+## 4. Phase 0
+**User:** Start phase 0. The user will collect sample XML files.
+
+**Claude:** Created the Cargo workspace (4 crates), an empty eframe window with the white/black theme, a CI workflow (3 OSes plus an MSRV job), a README and a fixtures guide.
+- The local rustc is 1.93 (distro package, no rustup). eframe 0.36+ needs 1.95, so eframe is pinned to 0.35 and MSRV is set to 1.92.
+- Build, fmt, clippy (`-D warnings`) and tests pass locally. The GUI could not be launched in this session (no display), so TC-011 is for the user to check.
+- The user's XML files in `tmp/` were left out of the commit.

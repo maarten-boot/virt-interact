@@ -6,7 +6,7 @@ Status: draft v1, 2026-11-13. The SPEC references point to `Spec.md`.
 | Area | Choice | Why |
 |------|--------|-----|
 | Language | Rust stable, edition 2024 | One code base for Windows, Linux and macOS |
-| GUI | `eframe`/`egui` | Simple, cross-platform, full control over colours (SPEC-001) |
+| GUI | `eframe`/`egui` 0.35 (0.36+ needs rustc 1.95; the local toolchain is 1.93; MSRV 1.92) | Simple, cross-platform, full control over colours (SPEC-001) |
 | Async | `tokio` | Needed by `russh`; background work off the GUI thread |
 | SSH | `russh` (+ its key/agent support) | Pure Rust; tunnels inside the same session (SPEC-018) |
 | XML | `roxmltree` | Read-only parsing of `virsh dumpxml` output |
@@ -28,9 +28,9 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 ## Phases
 
 ### Phase 0: Skeleton
-- [ ] 0.1 Create the Cargo workspace with the crates above. `cargo build` works on Linux.
-- [ ] 0.2 Set up a CI matrix (GitHub Actions) on Windows, Linux and macOS: fmt, clippy, test, build. (SPEC-002)
-- [ ] 0.3 Set up a Rust `.gitignore` and the `Changes.md` workflow.
+- [x] 0.1 Create the Cargo workspace with the crates above. `cargo build` works on Linux. (2026-11-13)
+- [x] 0.2 Set up a CI matrix (GitHub Actions) on Windows, Linux and macOS: fmt, clippy, test, build, plus an MSRV job. (SPEC-002) Written; not yet run, because the repo is not pushed.
+- [x] 0.3 Set up a Rust `.gitignore` and the `Changes.md` workflow.
 
 ### Phase 1: Config and theme (SPEC-001, 004, 005, 016)
 - [ ] 1.1 Config model, load and save, platform paths, `--config` override, error with line number.

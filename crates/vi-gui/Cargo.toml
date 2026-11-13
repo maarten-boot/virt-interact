@@ -1,0 +1,20 @@
+[package]
+name = "vi-gui"
+description = "virt-interact desktop GUI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "virt-interact"
+path = "src/main.rs"
+
+[dependencies]
+vi-core.workspace = true
+vi-backend.workspace = true
+eframe.workspace = true
+
+[lints]
+workspace = true

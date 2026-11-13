@@ -17,7 +17,7 @@ Each test case is traced to a Spec item.
 ## SPEC-002 / SPEC-003: Platforms and GUI
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-010 | CI | Build and tests pass on windows-latest, ubuntu-latest and macos-latest. | _tbd_ | planned |
+| TC-010 | CI | Build and tests pass on windows-latest, ubuntu-latest and macos-latest. | `.github/workflows/ci.yml` | implemented (not yet run) |
 | TC-011 | M | The GUI starts on all three platforms with an empty config. | — | planned |
 
 ## SPEC-004 / SPEC-005: Config and hosts

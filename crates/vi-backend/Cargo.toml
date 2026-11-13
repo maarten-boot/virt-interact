@@ -1,0 +1,15 @@
+[package]
+name = "vi-backend"
+description = "virt-interact hypervisor backends (libvirt via virsh over SSH)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+vi-core.workspace = true
+vi-ssh.workspace = true
+
+[lints]
+workspace = true
