@@ -9,15 +9,6 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
 
 ## 2. Platform and technology
 
-### SPEC-002: Target platforms (v1)
-- Runs on Windows 10+ (x86_64), Linux (x86_64), and macOS 12+ (x86_64 and aarch64).
-- Written in Rust (stable toolchain) and built from one code base.
-- The client needs no libvirt installation. It only needs network access to the hosts.
-
-### SPEC-003: GUI toolkit (v1)
-- The GUI uses `egui`/`eframe`.
-- SSH and inventory work runs in the background and never blocks the GUI (see SPEC-012).
-
 ### SPEC-001: UI colour and contrast (v1)
 - The default theme is a white background with black text.
 - Every foreground/background pair reaches a WCAG contrast ratio of at least 4.5:1. This includes state colours (running, stopped, error), selection highlights, disabled text and links.
@@ -27,6 +18,16 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
 - Presets: AA = 4.5:1, AAA = 7:1, Max = 21:1 (pure black on white). A custom number sets the minimum ratio and must be at least 4.5. Lower values are clamped to 4.5, and values above 21 are clamped to 21; in both cases a warning is logged and shown.
 - The palette is generated for the chosen minimum: backgrounds are lightened toward white and foregrounds darkened toward black until every pair reaches it. The toolbar shows the lowest ratio of all pairs in the current palette.
 - A change made interactively is saved back to the config file.
+- Disabled widgets are not shown by fading (that would lower the contrast). They use the palette's disabled text colour, which meets the minimum.
+
+### SPEC-002: Target platforms (v1)
+- Runs on Windows 10+ (x86_64), Linux (x86_64), and macOS 12+ (x86_64 and aarch64). CI builds all of them; macOS x86_64 is cross-compiled on an aarch64 runner (build only, no tests).
+- Written in Rust (stable toolchain) and built from one code base.
+- The client needs no libvirt installation. It only needs network access to the hosts.
+
+### SPEC-003: GUI toolkit (v1)
+- The GUI uses `egui`/`eframe`.
+- SSH and inventory work runs in the background and never blocks the GUI (see SPEC-012).
 
 ## 3. Configuration
 
@@ -35,7 +36,10 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
   - Linux: `$XDG_CONFIG_HOME/virt-interact/config.toml` (default `~/.config/virt-interact/config.toml`)
   - Windows: `%APPDATA%\virt-interact\config\config.toml`
   - macOS: `~/Library/Application Support/virt-interact/config.toml`
-- A command-line option `--config <path>` overrides the location.
+- Command-line options:
+  - `--config <path>` (or `--config=<path>`) overrides the location;
+  - `-h`/`--help` prints usage; `-V`/`--version` prints the version;
+  - an unknown argument prints usage and exits with code 2.
 - If the file is missing, the app starts with defaults and creates the file the first time it saves.
 - An invalid file gives a clear error message with the line number. Unknown keys count as invalid, so typing mistakes are caught. The app does not overwrite an invalid file: it starts with defaults and does not save changes until the file is fixed.
 
@@ -46,14 +50,15 @@ Each host has these fields:
 |-------|----------|---------|---------|
 | `name` | yes | — | Display name. Must be unique. |
 | `host` | yes | — | Hostname, IP address, or `~/.ssh/config` alias |
-| `port` | no | from ssh config, else 22 | SSH port |
+| `port` | no | from ssh config, else 22 | SSH port, 1–65535 |
 | `user` | no | from ssh config, else the local user name | Remote user |
-| `identity_file` | no | from ssh config / agent / default keys | Private key path |
+| `identity_file` | no | from ssh config / agent / default keys | Private key path. A leading `~` is expanded to the local home directory (`~user` is not). |
 | `backend` | no | `"libvirt"` | Virtualisation backend (SPEC-017) |
 | `libvirt_uri` | no | `"qemu:///system"` | URI passed to `virsh -c` |
 | `virsh_prefix` | no | none | Command prefix, e.g. `"sudo -n"` |
 
 - Hosts can be added, edited and removed in the GUI. Changes are saved to the config file.
+- Host names must be unique and not empty; `host` must not be empty.
 - The GUI and the file stay consistent: a host added in the file appears after a reload.
 
 ## 4. SSH
@@ -139,6 +144,7 @@ These errors are shown per host, in plain language, with the underlying detail a
 ### SPEC-016: Logging (v1)
 - Logs go to a file in the platform data directory (`<data_local_dir>/virt-interact/logs/virt-interact.log.YYYY-MM-DD`, daily rotation). The level is configurable (default `info`). It applies to virt-interact's own code; other libraries log at `warn`. The `RUST_LOG` environment variable overrides both.
 - Warnings and errors are also written to stderr.
+- An invalid level in the config is a config error (SPEC-004).
 - Logs never contain passphrases or private key material.
 
 ## 7. Architecture

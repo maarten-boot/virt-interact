@@ -1,5 +1,7 @@
 //! Configuration file (SPEC-004) and host definitions (SPEC-005).
 //!
+//! A complete, tested example is in `examples/config.example.toml`.
+//!
 //! ```toml
 //! [ui]
 //! contrast = "AA"          # "AA" | "AAA" | "Max" | number >= 4.5
@@ -134,6 +136,12 @@ impl HostConfig {
         }
     }
 
+    /// `identity_file` with a leading `~` expanded to the local home
+    /// directory (SPEC-005). `~user` forms are not expanded.
+    pub fn identity_path(&self) -> Option<PathBuf> {
+        self.identity_file.as_deref().map(expand_tilde)
+    }
+
     /// The port when no ssh config value applies.
     pub fn port_or_default(&self) -> u16 {
         self.port.unwrap_or(DEFAULT_SSH_PORT)
@@ -216,6 +224,12 @@ impl Config {
             if h.host.trim().is_empty() {
                 return Err(invalid(format!(
                     "host \"{}\": host must not be empty",
+                    h.name
+                )));
+            }
+            if h.port == Some(0) {
+                return Err(invalid(format!(
+                    "host \"{}\": port must be 1..=65535",
                     h.name
                 )));
             }
@@ -330,6 +344,24 @@ impl ConfigStore {
     }
 }
 
+/// Expand a leading `~` (alone, or followed by `/` or `\\`) to the home
+/// directory. Other paths are returned unchanged.
+pub fn expand_tilde(path: &Path) -> PathBuf {
+    let Some(s) = path.to_str() else {
+        return path.to_path_buf();
+    };
+    let rest = if s == "~" {
+        Some("")
+    } else {
+        s.strip_prefix("~/").or_else(|| s.strip_prefix("~\\"))
+    };
+    match (rest, dirs::home_dir()) {
+        (Some(""), Some(home)) => home,
+        (Some(rest), Some(home)) => home.join(rest),
+        _ => path.to_path_buf(),
+    }
+}
+
 /// 1-based line and column of a byte offset.
 fn line_col(text: &str, offset: usize) -> (usize, usize) {
     let before = &text[..offset.min(text.len())];
@@ -400,6 +432,13 @@ virsh_prefix = "sudo -n"
         assert_eq!(l.config, Config::default());
         assert!(!path.exists());
         assert!(!path.parent().unwrap().exists());
+
+        // C5: the first save creates the missing directory and the file.
+        let mut store = ConfigStore::open(path.clone()).0;
+        store.config.hosts.push(HostConfig::new("a", "h"));
+        store.save().unwrap();
+        assert!(path.exists());
+        assert_eq!(Config::load(&path).unwrap().config, store.config);
     }
 
     // TC-022
@@ -459,6 +498,34 @@ virsh_prefix = "sudo -n"
         }
     }
 
+    // TC-024 (C4)
+    #[test]
+    fn port_zero_rejected() {
+        let text = "[[hosts]]\nname = \"a\"\nhost = \"h\"\nport = 0\n";
+        match Config::parse(text, p()) {
+            Err(ConfigError::Invalid { message, .. }) => assert!(message.contains("port")),
+            other => panic!("expected invalid, got {other:?}"),
+        }
+    }
+
+    // TC-031a
+    #[test]
+    fn identity_file_tilde_expansion() {
+        let home = dirs::home_dir().unwrap();
+        let mut h = HostConfig::new("a", "h");
+        assert_eq!(h.identity_path(), None);
+        h.identity_file = Some(PathBuf::from("~/.ssh/id_ed25519"));
+        assert_eq!(h.identity_path(), Some(home.join(".ssh/id_ed25519")));
+        h.identity_file = Some(PathBuf::from("~"));
+        assert_eq!(h.identity_path(), Some(home.clone()));
+        h.identity_file = Some(PathBuf::from("/abs/key"));
+        assert_eq!(h.identity_path(), Some(PathBuf::from("/abs/key")));
+        h.identity_file = Some(PathBuf::from("~other/key"));
+        assert_eq!(h.identity_path(), Some(PathBuf::from("~other/key")));
+        h.identity_file = Some(PathBuf::from("keys/~/x"));
+        assert_eq!(h.identity_path(), Some(PathBuf::from("keys/~/x")));
+    }
+
     // TC-004 via the config file
     #[test]
     fn low_contrast_in_file_is_clamped_with_warning() {
@@ -489,7 +556,7 @@ virsh_prefix = "sudo -n"
         ));
     }
 
-    // Example file in the repo must stay valid (crosscheck 2026-11-13-01).
+    // TC-028: the example file in the repo must stay valid.
     #[test]
     fn example_config_parses() {
         let text = include_str!("../../../examples/config.example.toml");
@@ -499,8 +566,26 @@ virsh_prefix = "sudo -n"
         assert_eq!(cfg.hosts[0], HostConfig::new("lab", "lab.example.lan"));
         assert_eq!(cfg.hosts[1].port, Some(2222));
         assert_eq!(cfg.hosts[1].virsh_prefix.as_deref(), Some("sudo -n"));
+        assert!(!cfg.hosts[1].identity_path().unwrap().starts_with("~"));
     }
 
+    // TC-028: every ```toml block in the README must parse.
+    #[test]
+    fn readme_config_examples_parse() {
+        let readme = include_str!("../../../README.md");
+        let mut found = 0;
+        let mut rest = readme;
+        while let Some(start) = rest.find("```toml\n") {
+            let body = &rest[start + 8..];
+            let end = body.find("```").expect("unterminated toml block");
+            Config::parse(&body[..end], Path::new("README.md")).unwrap();
+            found += 1;
+            rest = &body[end + 3..];
+        }
+        assert!(found >= 1, "no toml example in README");
+    }
+
+    // TC-084
     #[test]
     fn invalid_log_level_rejected() {
         assert!(matches!(

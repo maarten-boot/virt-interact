@@ -35,6 +35,8 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
           components: rustfmt, clippy
+          # SPEC-002: also build macOS x86_64 (cross-compiled on the aarch64 runner)
+          targets: ${{ runner.os == 'macOS' && 'x86_64-apple-darwin' || '' }}
 
       - uses: Swatinem/rust-cache@v2
 
@@ -52,6 +54,10 @@ jobs:
         if: matrix.toolchain == 'stable'
         run: cargo build --release --locked -p vi-gui
 
+      - name: Build macOS x86_64 binary (cross)
+        if: runner.os == 'macOS' && matrix.toolchain == 'stable'
+        run: cargo build --release --locked -p vi-gui --target x86_64-apple-darwin
+
       - name: Upload binary
         if: matrix.toolchain == 'stable'
         uses: actions/upload-artifact@v4
@@ -60,4 +66,5 @@ jobs:
           path: |
             target/release/virt-interact
             target/release/virt-interact.exe
+            target/x86_64-apple-darwin/release/virt-interact
           if-no-files-found: error

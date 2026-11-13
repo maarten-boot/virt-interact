@@ -18,8 +18,8 @@ Status: draft v1, 2026-11-13. The SPEC references point to `Spec.md`.
 ## Code layout (Cargo workspace)
 ```
 crates/
-  vi-core/     config, ssh-config parsing, contrast/theme maths, model types, cache
-  vi-ssh/      russh session, auth, known_hosts, command runner, tunnels
+  vi-core/     config, paths/CLI, contrast/palette maths, logging, model types, cache
+  vi-ssh/      ~/.ssh/config parsing, russh session, auth, known_hosts, command runner, tunnels
   vi-backend/  HypervisorBackend trait + libvirt implementation (virsh + XML parsing)
   vi-gui/      eframe app (binary: virt-interact)
 tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
@@ -37,6 +37,7 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 - [x] 1.2 Contrast maths: WCAG relative luminance and ratio; palette generation for a given minimum ratio; presets; clamping. (`vi-core/src/contrast.rs`)
 - [x] 1.3 egui theme built from the palette (white/black default), plus a contrast control in the toolbar that saves to the config. (`vi-gui/src/theme.rs`, `main.rs`)
 - [x] 1.4 Logging setup. (`vi-core/src/logging.rs`)
+- [x] 1.5 Crosscheck 2026-11-13-01 fixes: no fading of disabled widgets and an egui colour-pair test (TC-007), clamping for infinite/NaN contrast, port 0 rejected, `~` expansion in `identity_file`, example config with a test, macOS x86_64 CI build.
 
 ### Phase 2: SSH (SPEC-006, 007, 008)
 - [ ] 2.1 `~/.ssh/config` subset parser and resolution of the effective host parameters.
@@ -55,12 +56,14 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
   - Added: a second host with libvirt 10.0.0 (3 running VMs, including SPICE `listen none` on a running VM, NAT network).
   - Still missing: UEFI (no UEFI VM available at the moment), a socket listen on a running VM, a network/volume disk, hostdev, and a host with stopped VMs in `list --all`.
 
-### Phase 4: GUI (SPEC-003, 012, 014, 015)
+### Phase 4: GUI (SPEC-003, 005, 012, 014, 015)
 - [ ] 4.1 Main window: host/VM tree, detail panel, toolbar, filter.
 - [ ] 4.2 Background refresh per host with status; refresh all runs in parallel.
 - [ ] 4.3 Host add/edit/remove dialogs; dialogs for the host key prompt and the passphrase prompt.
 - [ ] 4.4 Inventory cache: save, load and clear; "cached" marker.
 - [ ] 4.5 Settings dialog with the contrast control.
+- [ ] 4.6 "Reload config" action (SPEC-005: hosts added in the file appear after a reload).
+- [ ] 4.7 Automate TC-006: move `App` out of `main.rs` so a test can drive the contrast change and check the saved file.
 
 ### Phase 5: Release v1
 - [ ] 5.1 Packaging: Windows (zip, later MSI), Linux (tar.gz, later AppImage/deb), macOS (.app; signing and notarization to be decided).

@@ -92,15 +92,20 @@ mod tests {
         assert_eq!(a.config_path(), Some(PathBuf::from("/tmp/y.toml")));
     }
 
+    // TC-027
     #[test]
     fn default_path_ends_with_app_and_file() {
         let a = CliArgs::parse(Vec::<String>::new()).unwrap();
-        if let Some(p) = a.config_path() {
-            assert!(p.ends_with("config.toml"));
-            assert!(p.components().any(|c| c.as_os_str() == APP_NAME));
+        let p = a.config_path().expect("platform config dir");
+        let base = dirs::config_dir().unwrap().join(APP_NAME);
+        if cfg!(windows) {
+            assert_eq!(p, base.join("config").join("config.toml"));
+        } else {
+            assert_eq!(p, base.join("config.toml"));
         }
     }
 
+    // TC-026
     #[test]
     fn bad_arguments() {
         assert!(CliArgs::parse(["--config"]).is_err());

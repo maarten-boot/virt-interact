@@ -60,3 +60,7 @@ Spec clarifications made while implementing: unknown config keys are errors; con
 **User:** Do a crosscheck.
 
 **Claude:** Saved `architecture/Crosscheck-2026-11-13-01.md`. 23 tests pass, and fmt and clippy are clean. Main finding: egui's `disabled_alpha = 0.5` would make disabled widgets fall below 4.5:1 (latent SPEC-001 violation), and the theme mapping has no test. Other findings: the Plan and code disagree on where ssh-config parsing lives; the Spec has no entry for `--help`/`--version`, log level validation, or `~` expansion in `identity_file`; the README is out of date; macOS x86_64 is not built in CI. Added `examples/config.example.toml` plus a test. All other fixes are waiting for the user's OK.
+
+**User:** Apply all fixes.
+
+**Claude:** Applied C1–C5, S1–S7, E2 and E3 (details in Crosscheck-2026-11-13-01 §8). New tests: TC-007 (egui colour pairs), TC-026, TC-027, TC-028 (example file plus the README TOML blocks), TC-031a (`~` expansion, implemented ahead of phase 2) and TC-084. CI now cross-builds macOS x86_64. 28 tests pass.

@@ -93,7 +93,12 @@ impl ContrastLevel {
     /// Build a custom level, clamping to 4.5 ..= 21.
     /// Returns the level and a warning if the value had to be clamped (TC-004).
     pub fn custom(ratio: f64) -> (ContrastLevel, Option<String>) {
-        if !ratio.is_finite() || ratio < MIN_RATIO {
+        if ratio.is_nan() {
+            (
+                ContrastLevel::Custom(MIN_RATIO),
+                Some(format!("contrast is not a number; using {MIN_RATIO}")),
+            )
+        } else if ratio < MIN_RATIO {
             (
                 ContrastLevel::Custom(MIN_RATIO),
                 Some(format!(
@@ -395,6 +400,16 @@ mod tests {
         let (lvl, warn) = ContrastLevel::custom(7.5);
         assert_eq!(lvl, ContrastLevel::Custom(7.5));
         assert!(warn.is_none());
+        // C3: infinities and NaN
+        let (lvl, warn) = ContrastLevel::custom(f64::INFINITY);
+        assert_eq!(lvl, ContrastLevel::Custom(21.0));
+        assert!(warn.unwrap().contains("above the maximum"));
+        let (lvl, warn) = ContrastLevel::custom(f64::NEG_INFINITY);
+        assert_eq!(lvl, ContrastLevel::Custom(4.5));
+        assert!(warn.unwrap().contains("below the minimum"));
+        let (lvl, warn) = ContrastLevel::custom(f64::NAN);
+        assert_eq!(lvl, ContrastLevel::Custom(4.5));
+        assert!(warn.unwrap().contains("not a number"));
     }
 
     // TC-005

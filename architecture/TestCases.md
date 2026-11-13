@@ -10,31 +10,36 @@ Each test case is traced to a Spec item.
 | TC-001 | U | The default palette is a white background (#FFFFFF) with black text (#000000). | `vi-core contrast::tests::default_palette_is_white_on_black` | pass (2026-11-13) |
 | TC-002 | U | The WCAG contrast function gives known values: black/white = 21.0, #777/#FFF ≈ 4.48. | `vi-core contrast::tests::known_ratios` | pass (2026-11-13) |
 | TC-003 | U | For each preset (AA, AAA, Max) and for custom ratios 5.0 and 10.0, every fg/bg pair in the palette is ≥ the minimum. | `vi-core contrast::tests::every_pair_meets_minimum_for_all_levels, max_is_pure_black_and_white` | pass (2026-11-13) |
-| TC-004 | U | Config `contrast = 3.0` is clamped to 4.5 and logs a warning. | `vi-core contrast::tests::custom_below_minimum_is_clamped_with_warning; config::tests::low_contrast_in_file_is_clamped_with_warning` | pass (2026-11-13) |
+| TC-004 | U | Config `contrast = 3.0` is clamped to 4.5 and logs a warning; `inf` → 21, `-inf` → 4.5, NaN → 4.5, each with a warning. | `vi-core contrast::tests::custom_below_minimum_is_clamped_with_warning; config::tests::low_contrast_in_file_is_clamped_with_warning` | pass (2026-11-13) |
 | TC-005 | U | Config values `"AA"`, `"AAA"`, `"Max"` and `7.5` are parsed; an invalid string is an error. | `vi-core contrast::tests::raw_contrast_values; config::tests::contrast_values_in_file` | pass (2026-11-13) |
+| TC-007 | U | Every fg/bg colour pair in the egui `Visuals` built from the palette meets the minimum for each level; `disabled_alpha` is 1.0 (no fading). | `vi-gui theme::tests::every_egui_pair_meets_minimum, default_visuals_white_and_black` | pass (2026-11-13) |
 | TC-006 | M | Changing contrast in the toolbar takes effect at once and is saved to the config file. | — | planned (needs an interactive session) |
 
 ## SPEC-002 / SPEC-003: Platforms and GUI
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-010 | CI | Build and tests pass on windows-latest, ubuntu-latest and macos-latest. | `.github/workflows/ci.yml` | implemented (not yet run) |
+| TC-010 | CI | Build and tests pass on windows-latest, ubuntu-latest and macos-latest (aarch64), plus an x86_64-apple-darwin build and the MSRV job. | `.github/workflows/ci.yml` | implemented (not yet run) |
 | TC-011 | M | The GUI starts on all three platforms with an empty config. | — | Linux: pass under Xvfb (2026-11-13); Windows/macOS: open |
 
 ## SPEC-004 / SPEC-005: Config and hosts
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
 | TC-020 | U | A config with 2 hosts survives a round trip (load, save, load gives the same result). | `vi-core config::tests::round_trip_two_hosts, round_trip_custom_contrast` | pass (2026-11-13) |
-| TC-021 | U | A missing file gives defaults; it is not created until the first save. | `vi-core config::tests::missing_file_gives_defaults_and_is_not_created` | pass (2026-11-13) |
+| TC-021 | U | A missing file gives defaults; it is not created until the first save; the first save creates the missing directory and the file. | `vi-core config::tests::missing_file_gives_defaults_and_is_not_created` | pass (2026-11-13) |
 | TC-022 | U | Invalid TOML gives an error with the line number, and the file is not modified. | `vi-core config::tests::invalid_toml_reports_line_and_is_not_overwritten, unknown_key_is_an_error_with_line` | pass (2026-11-13) |
 | TC-023 | U | Defaults are applied: port 22, backend libvirt, URI `qemu:///system`. | `vi-core config::tests::host_defaults` | pass (2026-11-13) |
-| TC-024 | U | A duplicate host `name` is rejected. | `vi-core config::tests::duplicate_host_name_rejected` | pass (2026-11-13) |
+| TC-024 | U | A duplicate host `name` and port 0 are rejected. | `vi-core config::tests::duplicate_host_name_rejected, port_zero_rejected` | pass (2026-11-13) |
 | TC-025 | U | The `--config` path override is used. | `vi-core paths::tests::config_override` | pass (2026-11-13) |
+| TC-026 | U | `-h`/`--help` and `-V`/`--version` are recognised; `--config` without a value and unknown arguments are errors. | `vi-core paths::tests::bad_arguments` | pass (2026-11-13) |
+| TC-027 | U | The default path is `<config_dir>/virt-interact/config.toml` (Windows: `.../virt-interact/config/config.toml`). | `vi-core paths::tests::default_path_ends_with_app_and_file` | pass (2026-11-13) |
+| TC-028 | U | `examples/config.example.toml` and every TOML block in `README.md` parse; the example matches the documented values. | `vi-core config::tests::example_config_parses, readme_config_examples_parse` | pass (2026-11-13) |
 
 ## SPEC-006 / SPEC-007 / SPEC-008: SSH
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
 | TC-030 | U | ssh config: `Host` wildcard matching; the first value found wins for each keyword. | _tbd_ | planned |
 | TC-031 | U | Precedence: app config > ssh config > defaults. | _tbd_ | planned |
+| TC-031a | U | `identity_file` with a leading `~` is expanded to the home directory; `~user`, absolute and relative paths are unchanged. | `vi-core config::tests::identity_file_tilde_expansion` | pass (2026-11-13) |
 | TC-032 | U | A `ProxyJump` keyword gives a warning, not an error. | _tbd_ | planned |
 | TC-033 | U | known_hosts: matches a plain entry, matches a hashed entry (`\|1\|`), detects a mismatch, reports an unknown host. | _tbd_ | planned |
 | TC-034 | U | An accepted new host key is added to known_hosts in the correct format. | _tbd_ | planned |
@@ -88,6 +93,7 @@ Each test case is traced to a Spec item.
 | TC-081 | M | The tree, detail panel, raw XML copy and toolbar actions work. | — | planned |
 | TC-082 | U | The state indicator has a text or icon label, not only colour. | _tbd_ | planned |
 | TC-083 | U | The log file is created in the platform log directory at the configured level. | `vi-core logging::tests::writes_log_file_at_level, other_crates_only_warn` | pass (2026-11-13) |
+| TC-084 | U | An invalid `logging.level` is a config error. | `vi-core config::tests::invalid_log_level_rejected` | pass (2026-11-13) |
 
 ## SPEC-017: Backend abstraction
 | ID | Type | Description | Test location | Status |
