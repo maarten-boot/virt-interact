@@ -64,3 +64,17 @@ Spec clarifications made while implementing: unknown config keys are errors; con
 **User:** Apply all fixes.
 
 **Claude:** Applied C1–C5, S1–S7, E2 and E3 (details in Crosscheck-2026-11-13-01 §8). New tests: TC-007 (egui colour pairs), TC-026, TC-027, TC-028 (example file plus the README TOML blocks), TC-031a (`~` expansion, implemented ahead of phase 2) and TC-084. CI now cross-builds macOS x86_64. 28 tests pass.
+
+## 8. Phase 2
+**User:** Start phase 2.
+
+**Claude:** Implemented `vi-ssh`:
+- `sshconfig`: subset parser and `resolve`.
+- `known_hosts`: own implementation, because russh's version is too limited (single-space split, no markers or patterns).
+- `session`: russh 0.65 with the `ring` backend (no cmake/NASM on Windows). The unknown host key is asked about in a two-step connect, outside any network timeout. Auth is agent first, then key files, then a passphrase prompt; a key the agent already offered is skipped.
+- `runner`: `CommandRunner` and `MockRunner`.
+- `secret` (redacted, wiped on drop), `prompt` and `error` (with kinds for SPEC-013).
+
+Windows: russh has both the OpenSSH agent pipe and Pageant clients, so the spike needs no workaround; only a manual run on Windows remains. Added test-only SSH keys in `tests/fixtures/ssh/` and integration tests against an in-process russh server (unknown/learned/rejected/mismatched host key, encrypted key, auth failure list, RSA, exit status and stderr, command timeout, connection refused). The passphrase log test runs in its own test binary because of tracing's callsite interest cache. Added the `ssh-run` example for manual tests. 52 tests pass, and clippy and fmt are clean.
+
+Starting a local `sshd` and `ssh-agent` for a check against real OpenSSH was blocked by the permission system; the user can run that check instead (Plan 2.7).

@@ -9,6 +9,20 @@ publish = false
 
 [dependencies]
 vi-core.workspace = true
+russh.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+dirs.workspace = true
+ring = "0.17"
+base64 = "0.22"
+
+[dev-dependencies]
+rpassword = "7"
+tempfile.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

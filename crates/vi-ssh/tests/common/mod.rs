@@ -1,0 +1,137 @@
+//! Shared test helpers: an in-process russh server on 127.0.0.1 and test
+//! hosts/options. Keys: `tests/fixtures/ssh` (test-only).
+#![allow(dead_code)]
+
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+use russh::keys::PublicKey;
+use russh::server::{self, Auth, Msg, Session, VerifiedPublicKey};
+use russh::{Channel, ChannelId};
+use tokio::net::TcpListener;
+use vi_ssh::{ConnectOptions, ResolvedHost};
+
+pub const PASSPHRASE: &str = "test-passphrase-123";
+
+pub fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/ssh")
+        .join(name)
+}
+
+pub fn pubkey(name: &str) -> PublicKey {
+    russh::keys::load_public_key(fixture(&format!("{name}.pub"))).unwrap()
+}
+
+#[derive(Clone)]
+struct TestServer {
+    allowed: Vec<PublicKey>,
+}
+
+impl server::Handler for TestServer {
+    type Error = russh::Error;
+
+    async fn auth_publickey(
+        &mut self,
+        _user: &str,
+        key: VerifiedPublicKey<'_>,
+    ) -> Result<Auth, Self::Error> {
+        if self
+            .allowed
+            .iter()
+            .any(|k| k.key_data() == key.public_key.key_data())
+        {
+            Ok(Auth::Accept)
+        } else {
+            Ok(Auth::reject())
+        }
+    }
+
+    async fn channel_open_session(
+        &mut self,
+        _channel: Channel<Msg>,
+        reply: server::ChannelOpenHandle,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        reply.accept().await;
+        Ok(())
+    }
+
+    async fn exec_request(
+        &mut self,
+        channel: ChannelId,
+        data: &[u8],
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        session.channel_success(channel)?;
+        let cmd = String::from_utf8_lossy(data).to_string();
+        let status = match cmd.as_str() {
+            "echo hello" => {
+                session.data(channel, b"hello\n".to_vec())?;
+                0
+            }
+            "fail" => {
+                session.extended_data(channel, 1, b"boom\n".to_vec())?;
+                3
+            }
+            "hang" => return Ok(()),
+            _ => {
+                session.extended_data(channel, 1, format!("unknown: {cmd}\n").into_bytes())?;
+                127
+            }
+        };
+        session.exit_status_request(channel, status)?;
+        session.eof(channel)?;
+        session.close(channel)?;
+        Ok(())
+    }
+}
+
+/// Start a server accepting `allowed` client keys; returns its port.
+pub async fn start_server(allowed: Vec<PublicKey>) -> u16 {
+    let key = russh::keys::load_secret_key(fixture("server_ed25519"), None).unwrap();
+    let config = Arc::new(server::Config {
+        keys: vec![key],
+        auth_rejection_time: Duration::from_millis(10),
+        auth_rejection_time_initial: Some(Duration::ZERO),
+        ..Default::default()
+    });
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((sock, _)) = listener.accept().await {
+            let cfg = config.clone();
+            let h = TestServer {
+                allowed: allowed.clone(),
+            };
+            tokio::spawn(async move {
+                if let Ok(s) = server::run_stream(cfg, sock, h).await {
+                    let _ = s.await;
+                }
+            });
+        }
+    });
+    port
+}
+
+pub fn host(port: u16, keys: &[&str]) -> ResolvedHost {
+    ResolvedHost {
+        name: "test".into(),
+        alias: "127.0.0.1".into(),
+        hostname: "127.0.0.1".into(),
+        port,
+        user: "tester".into(),
+        identity_files: keys.iter().map(|k| fixture(k)).collect(),
+        identity_explicit: true,
+        warnings: vec![],
+    }
+}
+
+pub fn opts(dir: &tempfile::TempDir) -> ConnectOptions {
+    let mut o = ConnectOptions::new(dir.path().join("known_hosts"));
+    o.use_agent = false; // deterministic: no agent from the environment
+    o.connect_timeout = Duration::from_secs(5);
+    o.command_timeout = Duration::from_secs(5);
+    o
+}

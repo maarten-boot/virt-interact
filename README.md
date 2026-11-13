@@ -5,8 +5,8 @@ A desktop GUI (Windows, Linux, macOS) that connects to remote hosts over SSH
 (libvirt/virsh first). Remote VNC/SPICE viewing over the same SSH connection
 follows in v1.1.
 
-Status: phase 1 done (config, contrast/theme, logging). SSH, inventory and the
-host/VM views follow in phases 2–4. See `architecture/Spec.md` and
+Status: phase 2 done (config, contrast/theme, logging, SSH layer). The
+inventory and the host/VM views follow in phases 3–4. See `architecture/Spec.md` and
 `architecture/Plan.md`; changes per release are in `Changes.md`.
 
 ## Build
@@ -59,6 +59,19 @@ host = "lab.example.lan"
 Contrast can also be changed in the toolbar; the choice is saved to the config.
 Logs go to `<local data dir>/virt-interact/logs/` (on Linux
 `~/.local/share/virt-interact/logs/`); set `RUST_LOG` to override the level.
+
+## Testing SSH against a real host
+
+The SSH layer can be tried without the GUI:
+
+```sh
+cargo run -p vi-ssh --example ssh-run -- [--no-agent] [--port N] [--user U] \
+    [--identity PATH] [--known-hosts PATH] HOST [COMMAND...]
+```
+
+`HOST` may be an `~/.ssh/config` alias; `COMMAND` defaults to `virsh version`.
+Use `RUST_LOG=vi_ssh=debug` to see each step. `tests/fixtures/ssh/` holds
+**test-only** keys for the automated tests; never use them elsewhere.
 
 ## Layout
 

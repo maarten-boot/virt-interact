@@ -8,7 +8,7 @@ Status: draft v1, 2026-11-13. The SPEC references point to `Spec.md`.
 | Language | Rust stable, edition 2024 | One code base for Windows, Linux and macOS |
 | GUI | `eframe`/`egui` 0.35 (0.36+ needs rustc 1.95; the local toolchain is 1.93; MSRV 1.92) | Simple, cross-platform, full control over colours (SPEC-001) |
 | Async | `tokio` | Needed by `russh`; background work off the GUI thread |
-| SSH | `russh` (+ its key/agent support) | Pure Rust; tunnels inside the same session (SPEC-018) |
+| SSH | `russh` 0.65 (+ its key/agent support), crypto backend `ring` | Pure Rust; tunnels inside the same session (SPEC-018); `ring` avoids cmake/NASM on Windows |
 | XML | `roxmltree` | Read-only parsing of `virsh dumpxml` output |
 | Config | `serde` + `toml`, `directories` | SPEC-004 |
 | Cache | `serde_json` | SPEC-014 |
@@ -40,11 +40,15 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 - [x] 1.5 Crosscheck 2026-11-13-01 fixes: no fading of disabled widgets and an egui colour-pair test (TC-007), clamping for infinite/NaN contrast, port 0 rejected, `~` expansion in `identity_file`, example config with a test, macOS x86_64 CI build.
 
 ### Phase 2: SSH (SPEC-006, 007, 008)
-- [ ] 2.1 `~/.ssh/config` subset parser and resolution of the effective host parameters.
-- [ ] 2.2 known_hosts check (hashed and plain), plus adding a new key.
-- [ ] 2.3 russh connect: agent (Unix socket; Windows named pipe and Pageant), key files, passphrase callback.
-- [ ] 2.4 `CommandRunner` trait with a russh implementation and timeouts; a mock implementation for tests. (SPEC-017)
-- [ ] 2.5 Spike early: test the Windows agent and Pageant support in russh. If it is missing, decide on a workaround.
+- [x] 2.1 `~/.ssh/config` subset parser and resolution of the effective host parameters. (`vi-ssh/src/sshconfig.rs`)
+- [x] 2.2 known_hosts check (hashed and plain), plus adding a new key. Own implementation: russh's version only splits on single spaces and has no markers or patterns. (`vi-ssh/src/known_hosts.rs`)
+- [x] 2.3 russh connect: agent (Unix socket; Windows named pipe and Pageant), key files, passphrase callback. (`vi-ssh/src/session.rs`, `prompt.rs`, `secret.rs`, `error.rs`)
+- [x] 2.4 `CommandRunner` trait with a russh implementation and timeouts; a mock implementation for tests. (SPEC-017) (`vi-ssh/src/runner.rs`)
+- [~] 2.5 Spike: Windows agent and Pageant support in russh.
+  - Source review: russh 0.65 has `AgentClient::connect_named_pipe` (OpenSSH agent, `\\.\pipe\openssh-ssh-agent`) and `connect_pageant`; both are used (pipe first). No workaround needed.
+  - Still open: compile check in CI (Windows code is behind `cfg(windows)`) and a manual run on Windows (TC-038) with `cargo run -p vi-ssh --example ssh-run`.
+- [x] 2.6 Integration tests against an in-process russh server (`vi-ssh/tests/`), and the `ssh-run` example for manual tests on real hosts.
+- [ ] 2.7 Manual check against a real OpenSSH server and ssh-agent (TC-036/037 on a real host). Starting a local `sshd` from the assistant session was not permitted; to be run by the user.
 
 ### Phase 3: libvirt backend (SPEC-009, 010, 011, 013, 017)
 - [ ] 3.1 Allowlisted virsh command builder with shell quoting. (SPEC-011)
@@ -59,7 +63,7 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 ### Phase 4: GUI (SPEC-003, 005, 012, 014, 015)
 - [ ] 4.1 Main window: host/VM tree, detail panel, toolbar, filter.
 - [ ] 4.2 Background refresh per host with status; refresh all runs in parallel.
-- [ ] 4.3 Host add/edit/remove dialogs; dialogs for the host key prompt and the passphrase prompt.
+- [ ] 4.3 Host add/edit/remove dialogs; dialogs for the host key prompt and the passphrase prompt (GUI `Prompter`; may keep passphrases in memory for the app session so reconnects do not ask again).
 - [ ] 4.4 Inventory cache: save, load and clear; "cached" marker.
 - [ ] 4.5 Settings dialog with the contrast control.
 - [ ] 4.6 "Reload config" action (SPEC-005: hosts added in the file appear after a reload).

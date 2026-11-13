@@ -70,16 +70,23 @@ Each host has these fields:
   3. Default keys: `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa`.
 - Password authentication and keyboard-interactive authentication are never used.
 - If a key file is encrypted, the GUI asks for its passphrase. The passphrase is kept in memory for the session only and is never written to disk or to logs.
-- SSH is implemented with `russh`. There is no dependency on an external `ssh` binary.
+- SSH is implemented with `russh` (crypto backend `ring`, so no C toolchain/cmake is needed on Windows). There is no dependency on an external `ssh` binary.
+- A key that the agent already offered is not tried again from its file, so its passphrase is not asked for needlessly (the `.pub` next to the key file is used to recognise it).
+- RSA keys use `rsa-sha2-512`/`-256` signatures when the server supports them.
+- Each authentication failure reports which keys were tried and why each failed (not found, wrong passphrase, rejected).
 
 ### SPEC-007: `~/.ssh/config` support (v1)
-- For a host's `host` value, the app applies `Host` pattern matching and these keywords: `HostName`, `User`, `Port`, `IdentityFile`.
+- For a host's `host` value, the app applies `Host` pattern matching (`*`, `?`, `!negation`, case-insensitive) and these keywords: `HostName`, `User`, `Port`, `IdentityFile`. Options before the first `Host` apply to all hosts. As in OpenSSH, the first value found wins; `IdentityFile` values accumulate.
+- `IdentityFile` supports `~` and the tokens `%d` (home), `%u` (local user), `%r` (remote user), `%h` (host name), `%n` (original host), `%%`.
+- If no `IdentityFile` comes from the app config or ssh config, the default keys are tried (SPEC-006).
 - Values in the config file (SPEC-005) take precedence over `~/.ssh/config`.
-- `ProxyJump` and other keywords are not supported in v1. If they are present, a warning is shown.
+- `ProxyJump`, `ProxyCommand`, `Include` and `Match` blocks are not supported in v1. If they apply to a host, a warning is shown (the options inside `Match` blocks are ignored). Other keywords are ignored silently.
 
 ### SPEC-008: Host key verification (v1)
 - The server host key is checked against `~/.ssh/known_hosts`. Both hashed and plain entries are supported.
-- If the host is unknown, the app shows the key type and SHA256 fingerprint. The user can accept (the key is added to `known_hosts`) or reject (the connection is aborted).
+- Host patterns (`*`, `?`, `!`), `[host]:port` for non-22 ports, `@revoked` (the key is refused) are supported. `@cert-authority` lines are ignored: host certificates are not supported and are refused. Unreadable lines are skipped with a warning.
+- If the host is unknown, the app shows the key type and SHA256 fingerprint (and, if present, which other key types are recorded for the host). The user can accept (the key is added to `known_hosts`) or reject (the connection is aborted). The question is asked outside any network timeout: the handshake stops at the unknown key, and after acceptance the app reconnects.
+- New entries are written hashed (`|1|...`, like OpenSSH `HashKnownHosts yes`); the file is created with mode 0600 on Unix. If the file cannot be written, the key is accepted for this connection only, with a warning.
 - If the key does not match the stored key, the connection is refused with a prominent warning. There is no override in the GUI.
 
 ## 5. Inventory
@@ -120,7 +127,7 @@ Parsing is tolerant (see `tests/fixtures/`):
 - The connect timeout and the command timeout can be configured (defaults: 10 s and 30 s).
 
 ### SPEC-013: Error reporting (v1)
-These errors are shown per host, in plain language, with the underlying detail available:
+These errors are shown per host, in plain language, with the underlying detail available. The SSH layer groups them as connection, timeout, host key, authentication and other:
 - DNS or connection failure, or a timeout;
 - authentication failure (no usable key);
 - host key mismatch;
