@@ -78,3 +78,18 @@ Spec clarifications made while implementing: unknown config keys are errors; con
 Windows: russh has both the OpenSSH agent pipe and Pageant clients, so the spike needs no workaround; only a manual run on Windows remains. Added test-only SSH keys in `tests/fixtures/ssh/` and integration tests against an in-process russh server (unknown/learned/rejected/mismatched host key, encrypted key, auth failure list, RSA, exit status and stderr, command timeout, connection refused). The passphrase log test runs in its own test binary because of tracing's callsite interest cache. Added the `ssh-run` example for manual tests. 52 tests pass, and clippy and fmt are clean.
 
 Starting a local `sshd` and `ssh-agent` for a check against real OpenSSH was blocked by the permission system; the user can run that check instead (Plan 2.7).
+
+## 9. Crosscheck 02
+**User:** Do a crosscheck.
+
+**Claude:** Saved `architecture/Crosscheck-2026-11-13-02.md`. 53 tests pass, and fmt and clippy are clean. Findings:
+- Key-file auth errors abort without the list of keys tried (C1).
+- A rare host key case shows an internal message (C2).
+- The config timeouts are not connected to `ConnectOptions` (C3).
+- The Windows code has never been compiled (C5).
+- Spec wording on default keys, passphrase lifetime, timeout scope and the known_hosts name needs clarifying (S1–S4).
+- README status and the Plan risks row are out of date (S5, S6).
+- The fixtures README is missing the `ssh/` row (E2).
+- The TestCases legend and a few untraced tests need fixing (T1, T2).
+
+Added `examples/ssh_config.example` plus a test. Everything else is waiting for the user's OK.

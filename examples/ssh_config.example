@@ -1,0 +1,23 @@
+# The part of ~/.ssh/config that virt-interact understands (SPEC-007).
+# This file is parsed by a unit test (vi-ssh sshconfig::tests::example_ssh_config).
+#
+# Supported keywords: HostName, User, Port, IdentityFile.
+# The first value found for a keyword wins (put specific hosts first and
+# general defaults at the end); IdentityFile values accumulate.
+# Patterns: * ? and !negation, case-insensitive.
+# IdentityFile tokens: ~ %d (home) %u (local user) %r (remote user)
+#                      %h (host name) %n (host as typed) %%
+# Not supported (a warning is shown): ProxyJump, ProxyCommand, Include, Match.
+
+Host lab
+    HostName lab.example.lan
+    User ops
+    Port 2222
+    IdentityFile ~/.ssh/lab_ed25519
+
+Host *.example.lan !legacy.example.lan
+    User admin
+    IdentityFile %d/.ssh/id_%h
+
+Host *
+    Port 22

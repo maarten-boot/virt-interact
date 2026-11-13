@@ -504,6 +504,26 @@ Host *
         assert!(c.lookup("x").warnings[0].contains("Include"));
     }
 
+    // TC-028a: the example in the repo stays valid and means what it says.
+    #[test]
+    fn example_ssh_config() {
+        let c = SshConfig::parse(include_str!("../../../examples/ssh_config.example"));
+        assert!(c.parse_warnings.is_empty());
+        let r = resolve(&HostConfig::new("Lab", "lab"), &c, "me", &home());
+        assert_eq!(
+            (r.hostname.as_str(), r.user.as_str(), r.port),
+            ("lab.example.lan", "ops", 2222)
+        );
+        assert_eq!(r.identity_files, vec![home().join(".ssh/lab_ed25519")]);
+        assert!(r.warnings.is_empty());
+        let r = resolve(&HostConfig::new("w", "web.example.lan"), &c, "me", &home());
+        assert_eq!((r.user.as_str(), r.port), ("admin", 22));
+        assert_eq!(r.identity_files, vec![home().join(".ssh/id_web.example.lan")]);
+        let r = resolve(&HostConfig::new("l", "legacy.example.lan"), &c, "me", &home());
+        assert_eq!(r.user, "me");
+        assert!(!r.identity_explicit);
+    }
+
     #[test]
     fn missing_file_is_empty() {
         let dir = tempfile::tempdir().unwrap();
