@@ -186,10 +186,8 @@ fn original_case(k: &str) -> &'static str {
 /// Split `Key Value...` or `Key=Value` into a lowercase key and arguments.
 /// Double quotes group words.
 fn split_line(line: &str) -> Option<(String, Vec<String>)> {
-    let (key, rest) = match line.find(|c: char| c.is_whitespace() || c == '=') {
-        Some(i) => (&line[..i], &line[i..]),
-        None => return None,
-    };
+    let i = line.find(|c: char| c.is_whitespace() || c == '=')?;
+    let (key, rest) = (&line[..i], &line[i..]);
     let rest = rest.trim_start();
     let rest = rest.strip_prefix('=').unwrap_or(rest).trim_start();
     let mut args = Vec::new();
