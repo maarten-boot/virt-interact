@@ -60,3 +60,16 @@ This machine has no libvirt, so the check against a real local libvirt is for th
 **User:** Pushed.
 
 **Claude:** Run 43602996692: all four jobs pass. 119 tests on Linux, macOS and MSRV 1.92; 114 on Windows, where 5 unix-only tests are skipped. The local-host code compiles on Windows. TC-010 updated.
+
+## 4. Crosscheck 02 and a hover complaint
+**User:** Do a crosscheck. Also reported that moving the mouse over text in the left column makes the separating line between the two areas move. A box around the name is fine, but feedback should never cause movement or distraction elsewhere.
+
+**Claude:** Restated the report and reproduced it under Xvfb: hovering over the widest tree row moves the separator by 1 px, and the right panel moves with it. Cause: in egui 0.35 a widget's size includes twice its border width, and our theme uses wider borders on hover and press (1.5/2.0 px instead of 1.0). A second cause is that the tree panel's width follows its content, so status changes also move the separator. Saved `architecture/Crosscheck-2026-11-14-02.md`; 119 tests pass, and fmt and clippy are clean. Findings:
+- H1, H2: the hover and width problems above. Fix: the same border width in every state (feedback by colour only) and a tree that scrolls instead of growing, with tests.
+- C1: on macOS, Homebrew's `virsh` is not found when the app is started from Finder.
+- C2: the local entry's label ignores its URI.
+- C3: cache files of vanished local entries are left behind.
+- S1–S3: Spec and layout wording.
+- T2: a test case for "no size change on hover".
+
+Everything waits for the user's OK.
