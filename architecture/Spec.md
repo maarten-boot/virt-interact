@@ -66,11 +66,11 @@ Each host has these fields:
 
 ### SPEC-020: Local host without login (v1)
 - The local machine's libvirt can be shown without SSH: no login, no host key, no passphrase.
-- Two entries, shown first in the tree:
+- Two entries, shown first in the tree, labelled from their URI ("localhost (system)" for `qemu:///system`, "localhost (session)" for `qemu:///session`, otherwise "localhost (<uri>)"):
   - "localhost (system)": `[local] libvirt_uri`, default `qemu:///system`, with the optional `[local] virsh_prefix`;
   - "localhost (session)": `qemu:///session`, the user's own VMs (as used by GNOME Boxes, and by libvirt on macOS). Shown when `[local] session = true` (the default) and the system URI is not already the session URI. Reading it may start the user's session libvirt daemon, as any `virsh -c qemu:///session` does.
 - `[local] enabled`:
-  - `"auto"` (default): shown when `virsh` is found on `PATH`;
+  - `"auto"` (default): shown when `virsh` is found on the search path: `PATH`, then `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin` (an app started from the macOS Finder or Dock gets a minimal `PATH` without Homebrew). The same search path is used to run `virsh`, so detection and execution agree. Settings shows where `virsh` was found;
   - `"always"`: always shown (an error explains a missing `virsh`);
   - `"never"`: hidden.
 - The same allowlisted, read-only command lines as for remote hosts (SPEC-011: `LC_ALL=C`, `virsh -r`, quoting) run through the local POSIX shell (`sh -c`), with the `[ssh] command_timeout_secs` limit. Platforms without a POSIX shell (Windows) do not show local entries in `"auto"` mode.
@@ -175,6 +175,7 @@ Scope of an error:
 - After a failed refresh the last inventory stays visible, marked "cached".
 - At startup, and when a host is unreachable, the cached inventory is shown, clearly marked as "cached" with its timestamp.
 - The user can clear the cache.
+- The cache file of an entry that goes away (a host removed in the GUI or from the file, or a local entry that is no longer shown) is deleted.
 
 ## 6. GUI
 
@@ -188,6 +189,8 @@ Scope of an error:
 - **Filter:** by VM name (substring) and by state.
 - **Keyboard:** when no text field has focus and no dialog is open, Up/Down move the selection through the tree (only through expanded hosts, respecting the filter), Home/End jump to the first/last row, and Enter refreshes the selected host.
 - Disabled buttons show their text in the palette's disabled colour (SPEC-001).
+- **No movement from feedback:** hover, press and selection feedback changes only colours (border and background), never the size or position of anything. The tree panel's width changes only when the user drags the separator: rows wider than the panel scroll horizontally instead of widening it, so a longer status text or VM name moves nothing either.
+- The tree width, the window size and position, and which hosts are expanded are kept between runs (egui's own state file `app.ron`: Linux `$XDG_DATA_HOME/virt-interact/`, default `~/.local/share/virt-interact/`; macOS `~/Library/Application Support/virt-interact/`; Windows `%APPDATA%\virt-interact\data\`). It holds no host data; deleting it only resets the layout.
 
 ### SPEC-016: Logging (v1)
 - Logs go to a file in the platform data directory (`<data_local_dir>/virt-interact/logs/virt-interact.log.YYYY-MM-DD`, daily rotation). The level is configurable (default `info`). It applies to virt-interact's own code; other libraries log at `warn`. The `RUST_LOG` environment variable overrides both.

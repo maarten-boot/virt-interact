@@ -45,19 +45,30 @@ pub fn visuals(p: &Palette) -> egui::Visuals {
     w.noninteractive.weak_bg_fill = c(p.panel_bg);
     w.noninteractive.bg_stroke = border;
     w.noninteractive.fg_stroke = Stroke::new(1.0, text);
-    for (wv, bg, stroke_w) in [
-        (&mut w.inactive, p.widget_bg, 1.0),
-        (&mut w.hovered, p.widget_hover_bg, 1.5),
-        (&mut w.active, p.widget_hover_bg, 2.0),
-        (&mut w.open, p.widget_bg, 1.0),
+    // Feedback is colour only (SPEC-015, crosscheck 2026-11-14-02 H1): every
+    // state has the same border width and expansion, so hovering or
+    // pressing never changes a widget's size or moves anything. egui sizes
+    // a button as padding + expansion - stroke (inner margin, whole pixels)
+    // + stroke + (-expansion); an unselected tree row drops its frame when
+    // inactive and keeps only the inner margin. Both stay equal to the
+    // padding only when expansion == stroke width, a whole number.
+    for (wv, bg, border_col) in [
+        (&mut w.inactive, p.widget_bg, c(p.border)),
+        (&mut w.hovered, p.widget_hover_bg, text),
+        (&mut w.active, p.widget_hover_bg, text),
+        (&mut w.open, p.widget_bg, c(p.border)),
     ] {
         wv.bg_fill = c(bg);
         wv.weak_bg_fill = c(bg);
-        wv.bg_stroke = Stroke::new(stroke_w, if stroke_w > 1.0 { text } else { c(p.border) });
+        wv.bg_stroke = Stroke::new(WIDGET_STROKE, border_col);
         wv.fg_stroke = Stroke::new(1.0, text);
+        wv.expansion = WIDGET_STROKE;
     }
     v
 }
+
+/// Border width of interactive widgets in every state (see [`visuals`]).
+pub const WIDGET_STROKE: f32 = 1.0;
 
 /// Apply the palette to every egui style (light and dark): visuals from
 /// [`visuals`], and no fading at scroll-area edges.
@@ -153,6 +164,76 @@ mod tests {
             // Disabled text helper uses a palette colour too.
             for (_, b) in &bg {
                 assert!(contrast_ratio(p.disabled_text, rgb(*b)) + 1e-9 >= lvl.min_ratio());
+            }
+        }
+    }
+
+    // TC-007b: hover/press feedback is colour only; size never changes.
+    #[test]
+    fn widget_states_have_equal_geometry() {
+        for lvl in [ContrastLevel::Aa, ContrastLevel::Aaa, ContrastLevel::Max] {
+            let v = visuals(&Palette::for_level(lvl));
+            let w = &v.widgets;
+            for (name, wv) in [
+                ("inactive", &w.inactive),
+                ("hovered", &w.hovered),
+                ("active", &w.active),
+                ("open", &w.open),
+            ] {
+                assert_eq!(wv.bg_stroke.width, WIDGET_STROKE, "{name} border width");
+                assert_eq!(wv.expansion, WIDGET_STROKE, "{name} expansion");
+            }
+            assert_eq!(WIDGET_STROKE.fract(), 0.0, "whole pixels only");
+        }
+    }
+
+    /// Rect of a button and a selectable label, with the pointer away from
+    /// or on them (two frames each: egui styles by last frame's state).
+    fn rects(pointer: Option<egui::Pos2>, pressed: bool) -> Vec<egui::Rect> {
+        let ctx = egui::Context::default();
+        apply(&ctx, &Palette::for_level(ContrastLevel::Aa));
+        let mut out = Vec::new();
+        for _ in 0..3 {
+            let mut input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(400.0, 300.0),
+                )),
+                ..Default::default()
+            };
+            if let Some(p) = pointer {
+                input.events.push(egui::Event::PointerMoved(p));
+                if pressed {
+                    input.events.push(egui::Event::PointerButton {
+                        pos: p,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: Default::default(),
+                    });
+                }
+            }
+            out.clear();
+            let _ = ctx.run_ui(input, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    out.push(ui.button("Refresh").rect);
+                    out.push(ui.selectable_label(false, "some-vm-name").rect);
+                    out.push(ui.selectable_label(true, "selected-vm").rect);
+                    out.push(ui.label("after").rect);
+                });
+            });
+        }
+        out
+    }
+
+    // TC-007b: hovering or pressing a button or a tree row keeps every
+    // widget's rect (its own and the next one's) where it was.
+    #[test]
+    fn hover_and_press_do_not_move_anything() {
+        let rest = rects(None, false);
+        for (i, r) in rest.iter().take(3).enumerate() {
+            for pressed in [false, true] {
+                let now = rects(Some(r.center()), pressed);
+                assert_eq!(now, rest, "widget {i}, pressed {pressed}");
             }
         }
     }

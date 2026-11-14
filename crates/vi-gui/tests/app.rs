@@ -296,7 +296,8 @@ fn reload_config() {
     assert!(app.hosts.contains_key("third"));
     assert_eq!(app.store.config.hosts.len(), 3);
 
-    // A host removed in the file loses its cache file on reload (C5).
+    // A host removed in the file loses its cache file on reload (C5; now
+    // done by sync_hosts for every entry that goes, crosscheck 02 C3).
     assert!(cache.load("edge").is_some());
     let text = text.replace("name = \"edge\"\nhost = \"edge.example.lan\"\n", "");
     let text = text.replacen("[[hosts]]\n[[hosts]]", "[[hosts]]", 1);
@@ -436,7 +437,7 @@ fn local_entries() {
     let dir = tempfile::tempdir().unwrap();
     let (store, cache) = setup(dir.path());
     let path = store.path.clone();
-    let mut app = App::new(store, vec![], Some(cache));
+    let mut app = App::new(store, vec![], Some(cache.clone()));
     assert!(
         !app.hosts.contains_key(LOCAL_SYSTEM),
         "auto, virsh not detected"
@@ -460,9 +461,14 @@ fn local_entries() {
     assert!(!text.contains("@local"), "{text}");
 
     // "never" hides them even with virsh; "always" shows them without.
+    // An entry that disappears loses its cache file (crosscheck 02, C3).
+    cache
+        .save(&CachedInventory::new(LOCAL_SESSION, 1, fixture_inventory()))
+        .unwrap();
     app.store.config.local.enabled = LocalMode::Never;
     app.set_local_virsh(Some("/usr/bin/virsh".into()));
     assert!(!app.hosts.contains_key(LOCAL_SYSTEM));
+    assert!(cache.load(LOCAL_SESSION).is_none());
     assert_eq!(
         app.selection,
         Selection::None,
@@ -473,4 +479,77 @@ fn local_entries() {
     app.set_local_virsh(None);
     assert!(app.hosts.contains_key(LOCAL_SYSTEM));
     assert!(!app.hosts.contains_key(LOCAL_SESSION));
+}
+
+/// Width of the tree panel after one frame with `input`.
+fn tree_width(app: &mut App, ctx: &egui::Context, input: egui::RawInput) -> f32 {
+    let _ = ctx.run_ui(input, |ui| app.show(ui));
+    egui::containers::panel::PanelState::load(ctx, egui::Id::new(vi_gui::app::TREE_PANEL))
+        .expect("tree panel state")
+        .size()
+        .x
+}
+
+// TC-007b (H1/H2): moving the pointer over every row of the tree, pressing
+// on rows, a status text that changes width, and a VM name wider than the
+// panel all leave the tree panel's width (the separator) where it was.
+#[test]
+fn tree_width_is_stable() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, cache) = setup(dir.path());
+    let mut inv = fixture_inventory();
+    inv.domains.push(Domain::new(
+        "a-very-long-virtual-machine-name-that-is-wider-than-the-tree-panel",
+        DomainState::Running,
+    ));
+    cache.save(&CachedInventory::new("lab", 1, inv)).unwrap();
+    let mut app = App::new(store, vec![], Some(cache));
+    let ctx = egui::Context::default();
+    app.apply_theme(&ctx);
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1024.0, 700.0));
+    let input = |events: Vec<egui::Event>| egui::RawInput {
+        screen_rect: Some(screen),
+        events,
+        ..Default::default()
+    };
+    let w0 = tree_width(&mut app, &ctx, input(vec![]));
+    let w0 = tree_width(&mut app, &ctx, input(vec![])).max(w0);
+    assert!(w0 < 400.0, "the long name must not widen the panel: {w0}");
+
+    let mut y = 40.0;
+    while y < 400.0 {
+        for x in [20.0, 60.0, 120.0, 200.0] {
+            let p = egui::pos2(x, y);
+            let w = tree_width(&mut app, &ctx, input(vec![egui::Event::PointerMoved(p)]));
+            assert_eq!(w, w0, "hover at {p:?}");
+        }
+        let p = egui::pos2(40.0, y);
+        let press = |pressed| egui::Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        let w = tree_width(
+            &mut app,
+            &ctx,
+            input(vec![egui::Event::PointerMoved(p), press(true)]),
+        );
+        assert_eq!(w, w0, "press at {p:?}");
+        let w = tree_width(&mut app, &ctx, input(vec![press(false)]));
+        assert_eq!(w, w0, "release at {p:?}");
+        y += 9.0;
+    }
+
+    for status in [
+        HostStatus::Connecting,
+        HostStatus::Refreshing,
+        HostStatus::Ok(1),
+        HostStatus::Idle,
+    ] {
+        app.hosts.get_mut("lab").unwrap().status = status.clone();
+        app.hosts.get_mut("edge").unwrap().status = status.clone();
+        let w = tree_width(&mut app, &ctx, input(vec![]));
+        assert_eq!(w, w0, "status {status:?}");
+    }
 }

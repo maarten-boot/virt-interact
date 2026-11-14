@@ -73,3 +73,14 @@ This machine has no libvirt, so the check against a real local libvirt is for th
 - T2: a test case for "no size change on hover".
 
 Everything waits for the user's OK.
+
+## 5. Crosscheck 02 fixes
+**User:** Apply all fixes, including the improvement.
+
+**Claude:** Applied H1, H2, C1–C3, S1–S3, T2 and the improvement (see the Resolution in `Crosscheck-2026-11-14-02.md`):
+- Feedback by colour only: the same border width and expansion in every widget state. egui's sizing rule needs both to be equal whole numbers, otherwise an unselected tree row still grows on hover.
+- The tree scrolls horizontally instead of widening the panel.
+- Tree width and window size are kept between runs (eframe persistence, `app.ron`, layout only).
+- `virsh` search path for macOS (Homebrew), local labels from the URI, cache cleanup in one place.
+- 5 new tests; the two layout tests were checked to fail on the old code. 124 tests pass, fmt and clippy clean.
+- Under Xvfb the separator no longer moves on hover, and a dragged width survives a restart.

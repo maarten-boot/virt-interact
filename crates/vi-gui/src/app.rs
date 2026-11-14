@@ -302,10 +302,19 @@ impl App {
     }
 
     /// Make `hosts` match the config: add entries (from the cache if there
-    /// is one), drop entries of removed hosts.
+    /// is one), drop entries that are gone and delete their cache files.
+    /// That covers hosts removed in the GUI or from the file (reload), and
+    /// local entries that disappear (crosscheck 02, C3).
     fn sync_hosts(&mut self) {
         let names: Vec<String> = self.all_hosts().map(|h| h.name.clone()).collect();
-        self.hosts.retain(|k, _| names.contains(k));
+        let cache = self.cache.as_ref();
+        self.hosts.retain(|k, _| {
+            let keep = names.contains(k);
+            if !keep && let Some(c) = cache {
+                let _ = c.remove(k);
+            }
+            keep
+        });
         for n in names {
             if !self.hosts.contains_key(&n) {
                 let shown = self.cache.as_ref().and_then(|c| c.load(&n)).map(|c| Shown {
@@ -532,9 +541,6 @@ impl App {
         if let Some(w) = &self.worker {
             w.forget(name);
         }
-        if let Some(c) = &self.cache {
-            let _ = c.remove(name);
-        }
         self.sync_hosts();
     }
 
@@ -550,14 +556,6 @@ impl App {
             self.messages
                 .push(Message::error(format!("Config not reloaded: {e}")));
             return;
-        }
-        // Cache files of hosts that are gone from the file (C5).
-        if let Some(c) = &self.cache {
-            for old in &self.store.config.hosts {
-                if !store.config.hosts.iter().any(|h| h.name == old.name) {
-                    let _ = c.remove(&old.name);
-                }
-            }
         }
         self.store = store;
         if let Some(w) = &self.worker {
@@ -733,11 +731,18 @@ impl App {
             self.toolbar(ui);
             self.messages_bar(ui);
         });
-        egui::Panel::left("tree")
+        // The tree's width changes only when the user drags the separator:
+        // wide rows scroll instead of widening the panel (SPEC-015,
+        // crosscheck 2026-11-14-02 H2). The width is kept between runs
+        // with the rest of egui's memory (eframe persistence).
+        egui::Panel::left(TREE_PANEL)
             .resizable(true)
             .default_size(300.0)
             .show(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| self.tree(ui));
+                egui::ScrollArea::both()
+                    .id_salt("tree-scroll")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| self.tree(ui));
             });
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::both()
@@ -1520,6 +1525,9 @@ impl App {
         }
     }
 }
+
+/// Id of the left panel with the tree (its width is in egui's memory).
+pub const TREE_PANEL: &str = "tree";
 
 /// Persistent id of a host's node in the tree (also read by the keyboard
 /// navigation to know whether the host is expanded).

@@ -67,7 +67,8 @@ Unknown host keys and key passphrases are asked in a dialog. The SSH
 connection of each host stays open while the app runs, so later refreshes
 do not ask again.
 
-**This machine** needs no login: if `virsh` is on your `PATH`, the tree
+**This machine** needs no login: if `virsh` is found (on your `PATH`, or
+in `/opt/homebrew/bin` or `/usr/local/bin`, as on macOS), the tree
 starts with "localhost (system)" (`qemu:///system`) and "localhost (session)"
 (your own VMs, `qemu:///session`). They are read with the same read-only
 virsh commands, run locally. Configure or hide them under `[local]`
@@ -78,6 +79,9 @@ To refresh automatically at startup, set `refresh_on_start = true` under
 move the selection and Enter refreshes the selected host.
 
 Contrast is set under **Settings…**; the choice is saved to the config.
+Hovering or pressing changes only colours; nothing moves. Drag the line
+between the tree and the details to set the tree's width; it is kept, with
+the window size, between runs (egui's `app.ron`, see SPEC-015).
 Logs go to `<local data dir>/virt-interact/logs/` (on Linux
 `~/.local/share/virt-interact/logs/`); set `RUST_LOG` to override the level.
 
@@ -119,7 +123,7 @@ committing (see `tests/fixtures/README.md`).
 |------|---------|
 | `crates/vi-core` | config, paths/CLI, contrast/palette maths, logging, model types, cache |
 | `crates/vi-ssh` | `~/.ssh/config` parsing, SSH sessions, auth, known_hosts, command runner, tunnels |
-| `crates/vi-backend` | hypervisor backends (libvirt via virsh) |
+| `crates/vi-backend` | hypervisor backends (libvirt via virsh), local runner for this machine |
 | `crates/vi-gui` | the GUI as a library (app, background worker, SSH prompts, view logic, theme) plus the thin `virt-interact` binary |
 | `examples/` | example config and ssh config (kept valid by unit tests) |
 | `scripts/` | `anonymise_fixtures.py` for new virsh captures |

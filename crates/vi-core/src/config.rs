@@ -188,16 +188,18 @@ impl HostConfig {
         }
     }
 
-    /// Name shown in the GUI: the name, or `localhost (system|session)`
-    /// for a local entry.
+    /// Name shown in the GUI: the name, or for a local entry `localhost
+    /// (system)`, `localhost (session)` or `localhost (<uri>)`.
     pub fn display_name(&self) -> String {
         if !self.local {
             return self.name.clone();
         }
-        if self.name == LOCAL_SESSION {
-            "localhost (session)".into()
-        } else {
-            "localhost (system)".into()
+        // From the URI, so `[local] libvirt_uri = "qemu:///session"` or
+        // `lxc:///` is labelled as what it reads (crosscheck 02, C2).
+        match self.libvirt_uri.as_str() {
+            DEFAULT_LIBVIRT_URI => "localhost (system)".into(),
+            SESSION_URI => "localhost (session)".into(),
+            uri => format!("localhost ({uri})"),
         }
     }
 
@@ -690,7 +692,15 @@ virsh_prefix = "sudo -n"
         assert!(cfg.local_hosts(true).is_empty());
         // The session URI as main URI gives one entry.
         let (cfg, _) = Config::parse("[local]\nlibvirt_uri = \"qemu:///session\"\n", p()).unwrap();
-        assert_eq!(cfg.local_hosts(true).len(), 1);
+        let l = cfg.local_hosts(true);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].display_name(), "localhost (session)");
+        // Any other URI is shown as it is.
+        let (cfg, _) = Config::parse("[local]\nlibvirt_uri = \"lxc:///\"\n", p()).unwrap();
+        assert_eq!(
+            cfg.local_hosts(true)[0].display_name(),
+            "localhost (lxc:///)"
+        );
 
         for bad in [
             "[local]\nenabled = \"sometimes\"\n",
