@@ -41,6 +41,7 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
   - `--config <path>` (or `--config=<path>`) overrides the location;
   - `-h`/`--help` prints usage; `-V`/`--version` prints the version;
   - an unknown argument prints usage and exits with code 2.
+- `[ui]` keys: `contrast` (SPEC-001) and `refresh_on_start` (bool, default `false`; SPEC-012).
 - If the file is missing, the app starts with defaults and creates the file the first time it saves.
 - An invalid file gives a clear error message with the line number. Unknown keys count as invalid, so typing mistakes are caught. The app does not overwrite an invalid file: it starts with defaults and does not save changes until the file is fixed.
 
@@ -102,7 +103,7 @@ Each host has these fields:
 
 ### SPEC-010: Machine components (v1)
 For each domain, the app shows:
-- **General:** hypervisor type (e.g. kvm), OS type, architecture, machine type, firmware (UEFI if `<os firmware="efi">`, a `pflash` loader or an OVMF/EDK2/AAVMF loader path; otherwise BIOS), guest OS (from the libosinfo metadata `os id`, if present, shown without scheme and vendor host: `http://ubuntu.com/ubuntu/24.04` → `ubuntu/24.04`; an ID in another form is shown as is), description and title if set.
+- **General:** UUID (from `dominfo`, else from the XML), hypervisor type (e.g. kvm), OS type, architecture, machine type, firmware (UEFI if `<os firmware="efi">`, a `pflash` loader or an OVMF/EDK2/AAVMF loader path; otherwise BIOS), guest OS (from the libosinfo metadata `os id`, if present, shown without scheme and vendor host: `http://ubuntu.com/ubuntu/24.04` → `ubuntu/24.04`; an ID in another form is shown as is), description and title if set.
 - **CPU:** vCPU count (current/max), CPU mode or model, topology (sockets/dies/cores/threads).
 - **Memory:** maximum and current memory, hugepages if configured.
 - **Disks:** device type (disk, cdrom, floppy, lun), target dev, bus, source (file, block, dir, network or volume; other types are shown by name), driver format, read-only/shareable flags, capacity/allocation/physical size (when the size can be read).
@@ -134,7 +135,7 @@ Parsing is tolerant (see `tests/fixtures/`):
 - Hosts are queried in parallel. A slow or failing host does not delay the others.
 - Within one host, up to 4 domains are queried at the same time, each on its own channel of the one SSH connection. Results keep the order of `virsh list`.
 - Each host shows its status: idle, connecting, refreshing, ok (with a timestamp), or error.
-- There is no automatic refresh at startup (it could ask for passphrases or host keys before the user does anything). At startup the cached inventory is shown (SPEC-014).
+- By default there is no automatic refresh at startup (it could ask for passphrases or host keys before the user does anything); the cached inventory is shown instead (SPEC-014). With `[ui] refresh_on_start = true` all hosts are refreshed once when the app starts.
 - A refresh of a host that is already refreshing is ignored.
 - The connect timeout and the command timeout can be configured in `[ssh]` (`connect_timeout_secs`, `command_timeout_secs`; defaults 10 s and 30 s).
 - The connect timeout applies separately to the TCP connect, the SSH handshake and each authentication attempt. Time spent waiting for the user (host key question, passphrase) is not counted. The command timeout applies to each remote command; after a timeout the connection stays usable.
@@ -171,6 +172,8 @@ Scope of an error:
 - **Host details:** connection settings, status with the error message and its detail, libvirt and hypervisor version, number of VMs, whether the inventory is live or cached and when it was taken, warnings; Refresh, Edit and Remove (with confirmation).
 - **VM details:** identical other devices are grouped with a count; an empty cdrom shows "empty drive".
 - **Filter:** by VM name (substring) and by state.
+- **Keyboard:** when no text field has focus and no dialog is open, Up/Down move the selection through the tree (only through expanded hosts, respecting the filter), Home/End jump to the first/last row, and Enter refreshes the selected host.
+- Disabled buttons show their text in the palette's disabled colour (SPEC-001).
 
 ### SPEC-016: Logging (v1)
 - Logs go to a file in the platform data directory (`<data_local_dir>/virt-interact/logs/virt-interact.log.YYYY-MM-DD`, daily rotation). The level is configurable (default `info`). It applies to virt-interact's own code; other libraries log at `warn`. The `RUST_LOG` environment variable overrides both.

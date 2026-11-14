@@ -54,6 +54,24 @@ fn setup(dir: &Path) -> (ConfigStore, Cache) {
     (store, Cache::new(dir.join("cache")))
 }
 
+/// Every host refuses the connection.
+struct Down;
+impl Connector for Down {
+    fn connect<'a>(
+        &'a self,
+        h: &'a HostConfig,
+        _: &'a SshSettings,
+        _: &'a dyn Prompter,
+    ) -> BoxFuture<'a, Result<Arc<dyn CommandRunner>, BackendError>> {
+        Box::pin(async move {
+            Err(BackendError::Ssh(SshError::Connect {
+                addr: format!("{}:22", h.host),
+                source: std::io::Error::from(std::io::ErrorKind::ConnectionRefused),
+            }))
+        })
+    }
+}
+
 fn frame(app: &mut App, ctx: &egui::Context) {
     let _ = ctx.run_ui(egui::RawInput::default(), |ui| app.show(ui));
 }
@@ -121,22 +139,6 @@ fn all_views_render_headless() {
 // cached; a failed refresh keeps it, still marked.
 #[test]
 fn cached_inventory_shown_when_host_unreachable() {
-    struct Down;
-    impl Connector for Down {
-        fn connect<'a>(
-            &'a self,
-            h: &'a HostConfig,
-            _: &'a SshSettings,
-            _: &'a dyn Prompter,
-        ) -> BoxFuture<'a, Result<Arc<dyn CommandRunner>, BackendError>> {
-            Box::pin(async move {
-                Err(BackendError::Ssh(SshError::Connect {
-                    addr: format!("{}:22", h.host),
-                    source: std::io::Error::from(std::io::ErrorKind::ConnectionRefused),
-                }))
-            })
-        }
-    }
     let dir = tempfile::tempdir().unwrap();
     let (store, cache) = setup(dir.path());
     cache
@@ -282,7 +284,10 @@ fn reload_config() {
     let dir = tempfile::tempdir().unwrap();
     let (store, cache) = setup(dir.path());
     let path = store.path.clone();
-    let mut app = App::new(store, vec![], Some(cache));
+    cache
+        .save(&CachedInventory::new("edge", 1, fixture_inventory()))
+        .unwrap();
+    let mut app = App::new(store, vec![], Some(cache.clone()));
     let ctx = egui::Context::default();
     let mut text = std::fs::read_to_string(&path).unwrap();
     text.push_str("[[hosts]]\nname = \"third\"\nhost = \"t.example.lan\"\n");
@@ -291,8 +296,133 @@ fn reload_config() {
     assert!(app.hosts.contains_key("third"));
     assert_eq!(app.store.config.hosts.len(), 3);
 
+    // A host removed in the file loses its cache file on reload (C5).
+    assert!(cache.load("edge").is_some());
+    let text = text.replace("name = \"edge\"\nhost = \"edge.example.lan\"\n", "");
+    let text = text.replacen("[[hosts]]\n[[hosts]]", "[[hosts]]", 1);
+    std::fs::write(&path, &text).unwrap();
+    app.reload_config(&ctx);
+    assert!(!app.hosts.contains_key("edge"), "{text}");
+    assert!(cache.load("edge").is_none());
+
     std::fs::write(&path, "[[hosts]\nbroken").unwrap();
     app.reload_config(&ctx);
-    assert_eq!(app.store.config.hosts.len(), 3);
+    assert_eq!(app.store.config.hosts.len(), 2);
     assert!(app.messages.last().unwrap().is_error);
+}
+
+// TC-029 (T2): when the config cannot be saved (the file was invalid at
+// start, so the store is read-only), the change is reverted and reported.
+#[test]
+fn host_form_save_failure_reverts() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[[hosts]\nbroken").unwrap();
+    let (store, _, err) = ConfigStore::open(path.clone());
+    assert!(err.is_some());
+    let mut app = App::new(store, vec![], None);
+    let mut f = HostForm::new_host();
+    f.name = "a".into();
+    f.host = "a.example.lan".into();
+    app.host_form = Some(f);
+    assert!(!app.submit_host_form());
+    assert!(app.store.config.hosts.is_empty());
+    assert!(app.messages.last().unwrap().is_error);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "[[hosts]\nbroken");
+}
+
+// TC-088: keyboard navigation follows the tree order, respects the filter
+// and collapsed hosts, and clamps at both ends.
+#[test]
+fn keyboard_navigation_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, cache) = setup(dir.path());
+    cache
+        .save(&CachedInventory::new("lab", 1, fixture_inventory()))
+        .unwrap();
+    let mut app = App::new(store, vec![], Some(cache));
+    let all_open = |_: &str| true;
+    let items = app.visible_items(all_open);
+    let names: Vec<String> = items
+        .iter()
+        .map(|s| match s {
+            Selection::Host(h) => format!("H:{h}"),
+            Selection::Domain(_, d) => d.clone(),
+            Selection::None => unreachable!(),
+        })
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "H:lab",
+            "vm-j2sunl",
+            "vm-rcqh1f",
+            "vm-wn1018",
+            "broken",
+            "H:edge"
+        ]
+    );
+    app.move_selection(1, all_open);
+    assert_eq!(app.selection, Selection::Host("lab".into()));
+    app.move_selection(1, all_open);
+    assert_eq!(
+        app.selection,
+        Selection::Domain("lab".into(), "vm-j2sunl".into())
+    );
+    app.move_selection(i32::MAX, all_open);
+    assert_eq!(app.selection, Selection::Host("edge".into()));
+    app.move_selection(1, all_open);
+    assert_eq!(app.selection, Selection::Host("edge".into()), "clamped");
+    app.move_selection(-1, all_open);
+    assert_eq!(
+        app.selection,
+        Selection::Domain("lab".into(), "broken".into())
+    );
+    // Collapsed host: its VMs are skipped.
+    app.selection = Selection::Host("edge".into());
+    app.move_selection(-1, |h| h != "lab");
+    assert_eq!(app.selection, Selection::Host("lab".into()));
+    // Filter.
+    app.filter.text = "rcq".into();
+    assert_eq!(app.visible_items(all_open).len(), 3);
+    // Up with nothing selected goes to the last row.
+    app.selection = Selection::None;
+    app.move_selection(-1, all_open);
+    assert_eq!(app.selection, Selection::Host("edge".into()));
+}
+
+// TC-007a (C2): disabled buttons use the palette's disabled colour, which is
+// distinct from the normal text and meets the minimum on every background.
+#[test]
+fn disabled_buttons_use_disabled_colour() {
+    use vi_core::contrast::{Palette, Rgb, contrast_ratio};
+    for level in [ContrastLevel::Aa, ContrastLevel::Aaa] {
+        let p = Palette::for_level(level);
+        let off = vi_gui::app::button_color(&p, false);
+        let on = vi_gui::app::button_color(&p, true);
+        assert_ne!(off, on, "{level:?}");
+        let rgb = Rgb(off.r(), off.g(), off.b());
+        assert_eq!(rgb, p.disabled_text);
+        for bg in p.backgrounds() {
+            assert!(contrast_ratio(rgb, bg) >= p.min_ratio - 1e-9);
+        }
+    }
+}
+
+// TC-089: with `refresh_on_start`, the first frame starts a refresh of
+// every host; without it, nothing connects.
+#[test]
+fn refresh_on_start() {
+    for on in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut store, cache) = setup(dir.path());
+        store.config.ui.refresh_on_start = on;
+        let (worker, events) = Worker::new(Arc::new(Down), Arc::new(NoPrompt), Arc::new(|| {}));
+        let (_ptx, prx) = channel();
+        let mut app = App::new(store, vec![], Some(cache)).with_worker(worker, events, prx);
+        let ctx = egui::Context::default();
+        frame(&mut app, &ctx);
+        let idle = app.hosts.values().all(|e| e.status == HostStatus::Idle);
+        assert_eq!(idle, !on, "refresh_on_start = {on}");
+    }
 }

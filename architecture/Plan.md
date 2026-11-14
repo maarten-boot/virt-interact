@@ -22,7 +22,7 @@ crates/
   vi-core/     config, paths/CLI, contrast/palette maths, logging, model types, cache
   vi-ssh/      ~/.ssh/config parsing, russh session, auth, known_hosts, command runner, tunnels
   vi-backend/  HypervisorBackend trait + libvirt implementation (virsh + XML parsing)
-  vi-gui/      eframe app (binary: virt-interact)
+  vi-gui/      library (app, worker, prompts, view, theme) + thin binary `virt-interact`; tests drive the app headless
 tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 ```
 
@@ -76,6 +76,7 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 - [x] 4.6 "Reload config" action.
 - [x] 4.7 `vi-gui` is now a library plus a thin binary; `tests/app.rs` drives the app and renders every view headless (`Context::run_ui`).
 - [x] 4.8 Smoke test under Xvfb (2026-11-13). Found and fixed: egui fades text at scroll-area edges (contrast); dialog fields too narrow; settings paths not wrapped; form error wording.
+- [x] 4.10 Crosscheck 2026-11-14-01 fixes: stale-connection race (generations), disabled button colour, passphrase wiped on skip, ages repaint, cache cleanup on reload; UUID from XML; `refresh_on_start`; keyboard navigation. (2026-11-14)
 - [ ] 4.9 Manual check on a real desktop against a real host (TC-081, TC-006 on Windows/macOS): refresh, host key and passphrase dialogs, clipboard.
 
 ### Phase 5: Release v1

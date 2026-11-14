@@ -14,6 +14,9 @@
 # "AA" (4.5:1, default), "AAA" (7:1), "Max" (21:1, pure black on white),
 # or a number between 4.5 and 21.
 contrast = "AA"
+# Refresh every host when the app starts (default false: a refresh may ask
+# for host keys or key passphrases before you do anything).
+refresh_on_start = false
 
 [ssh]
 connect_timeout_secs = 10   # default 10

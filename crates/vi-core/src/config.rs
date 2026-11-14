@@ -48,6 +48,9 @@ pub struct Config {
 pub struct UiConfig {
     /// Minimum contrast (SPEC-001).
     pub contrast: ContrastLevel,
+    /// Refresh all hosts when the app starts (SPEC-012). Off by default:
+    /// a refresh may ask for host keys or passphrases.
+    pub refresh_on_start: bool,
 }
 
 /// Timeouts (SPEC-012).
@@ -615,6 +618,9 @@ virsh_prefix = "sudo -n"
         assert_eq!(cfg.hosts[1].port, Some(2222));
         assert_eq!(cfg.hosts[1].virsh_prefix.as_deref(), Some("sudo -n"));
         assert!(!cfg.hosts[1].identity_path().unwrap().starts_with("~"));
+        assert!(!cfg.ui.refresh_on_start);
+        let (cfg, _) = Config::parse("[ui]\nrefresh_on_start = true\n", Path::new("c")).unwrap();
+        assert!(cfg.ui.refresh_on_start);
     }
 
     // TC-028: every ```toml block in the README must parse.

@@ -13,6 +13,7 @@ Each test case is traced to a Spec item.
 | TC-004 | U | Config `contrast = 3.0` is clamped to 4.5 and logs a warning; `inf` → 21, `-inf` → 4.5, NaN → 4.5, each with a warning. | `vi-core contrast::tests::custom_below_minimum_is_clamped_with_warning; config::tests::low_contrast_in_file_is_clamped_with_warning` | pass (2026-11-13) |
 | TC-005 | U | Config values `"AA"`, `"AAA"`, `"Max"` and `7.5` are parsed; an invalid string is an error. | `vi-core contrast::tests::raw_contrast_values; config::tests::contrast_values_in_file` | pass (2026-11-13) |
 | TC-007 | U | Every fg/bg colour pair in the egui `Visuals` built from the palette meets the minimum for each level; nothing fades: `disabled_alpha` is 1.0 and scroll-area edge fading is off. | `vi-gui theme::tests::every_egui_pair_meets_minimum, default_visuals_white_and_black, apply_turns_off_all_fading` | pass (2026-11-13) |
+| TC-007a | U | Disabled buttons draw their text in the palette's disabled colour: distinct from normal text, and at least the minimum ratio on every background (no fading). | `vi-gui tests/app.rs::disabled_buttons_use_disabled_colour`; seen under Xvfb | pass (2026-11-14) |
 | TC-006 | U/M | Changing contrast in the settings takes effect at once and is saved to the config file. | `vi-gui tests/app.rs::contrast_change_is_saved`; manual under Xvfb (menu → Max: pure black/white at once, `contrast = "Max"` saved) | pass (2026-11-13, automated + Xvfb); on a real desktop: open |
 
 ## SPEC-002 / SPEC-003: Platforms and GUI
@@ -34,8 +35,8 @@ Each test case is traced to a Spec item.
 | TC-027 | U | The default path is `<config_dir>/virt-interact/config.toml` (Windows: `.../virt-interact/config/config.toml`). | `vi-core paths::tests::default_path_ends_with_app_and_file` | pass (2026-11-13) |
 | TC-028 | U | `examples/config.example.toml` and every TOML block in `README.md` parse; the example matches the documented values. | `vi-core config::tests::example_config_parses, readme_config_examples_parse` | pass (2026-11-13) |
 | TC-028a | U | `examples/ssh_config.example` parses without warnings and resolves as its comments say. | `vi-ssh sshconfig::tests::example_ssh_config` | pass (2026-11-13) |
-| TC-029 | U | Hosts are added, edited (including rename) and removed through the host form; a missing name/host, an invalid port, a duplicate name or a bad `virsh_prefix` keeps the form open with a message and changes nothing. | `vi-gui tests/app.rs::host_form_add_edit_remove` | pass (2026-11-13) |
-| TC-029a | U | "Reload config" picks up hosts added in the file; an invalid file is reported and the current config stays (Plan 4.6). | `vi-gui tests/app.rs::reload_config` | pass (2026-11-13) |
+| TC-029 | U | Hosts are added, edited (including rename) and removed through the host form; a missing name/host, an invalid port, a duplicate name or a bad `virsh_prefix` keeps the form open with a message and changes nothing; if the config cannot be saved (read-only store) the change is reverted and reported. | `vi-gui tests/app.rs::host_form_add_edit_remove, host_form_save_failure_reverts` | pass (2026-11-14) |
+| TC-029a | U | "Reload config" picks up hosts added in the file and deletes the cache files of hosts removed from it; an invalid file is reported and the current config stays (Plan 4.6). | `vi-gui tests/app.rs::reload_config` | pass (2026-11-14) |
 
 ## SPEC-006 / SPEC-007 / SPEC-008: SSH
 | ID | Type | Description | Test location | Status |
@@ -64,6 +65,7 @@ Each test case is traced to a Spec item.
 | TC-040 | U | Parse `virsh list --all` fixture output: running and shut-off domains, names with spaces. | `vi-backend tests/fixtures.rs::list_fixtures`; `parse::tests::list_with_spaces_and_states, list_edge_cases` | pass (2026-11-13) |
 | TC-040a | U | virsh state strings map to the model (`shut off`, `in shutdown` → other); sizes are shown in binary units. | `vi-core model::tests::states_from_virsh, human_byte_units` | pass (2026-11-13) |
 | TC-041 | U | Parse `dominfo` fixture: state, persistent, autostart, UUID. Unknown keys (`Autostart Once`, `Security *`) are ignored without an error; works for both libvirt 10.0.0 and 12.0.0 fixtures. | `vi-backend tests/fixtures.rs::dominfo_fixtures_both_versions`; `parse::tests::dominfo_values` | pass (2026-11-13) |
+| TC-041a | I | Without a UUID from `dominfo`, the UUID is taken from the domain XML. | `vi-backend tests/fixtures.rs::uuid_falls_back_to_xml`; `bios_vm_components` | pass (2026-11-14) |
 | TC-042 | U | Parse the dumpxml fixture of a BIOS VM with 3 disks, an empty cdrom, 1 NAT NIC and VNC graphics; memory units are converted to KiB. | `vi-backend tests/fixtures.rs::bios_vm_components`; `domxml::tests::memory_units` | pass (2026-11-13) |
 | TC-043 | U | Parse the XML of a UEFI VM (`firmware="efi"` or a pflash loader) with SPICE socket listen, a network listen with live address, and a CPU topology. Synthetic until a UEFI capture exists. | `vi-backend domxml::tests::uefi_spice_socket_topology` (synthetic XML: no UEFI capture yet) | pass (2026-11-13) |
 | TC-044 | U | Parse a network disk (rbd/iscsi) and a volume disk source. | `vi-backend domxml::tests::network_volume_block_disks` (synthetic XML) | pass (2026-11-13) |
@@ -95,6 +97,7 @@ Each test case is traced to a Spec item.
 | TC-064 | I | A hanging `domblkinfo` makes only that disk's size unknown (with a warning); a hanging `dumpxml` is shown on that domain; the other domains are complete; a hanging `virsh version` fails the host with a timeout. | `vi-backend tests/fixtures.rs::timeouts_stay_per_domain` | pass (2026-11-13) |
 | TC-065 | I | Domains of one host are queried in parallel (8 domains with a 1 s delay: about 2 s with 4 at a time, 8 s with 1); results keep the list order. | `vi-backend tests/fixtures.rs::domains_are_queried_in_parallel` | pass (2026-11-13) |
 | TC-066 | I | The SSH connection of a host is kept and reused (no second connect, so no second passphrase prompt); "forget" (host edited) forces a reconnect; a second refresh of a busy host is not started. | `vi-gui worker::tests::connection_is_reused` | pass (2026-11-13) |
+| TC-066a | I | A host forgotten (edited, removed, config reloaded) while its refresh is still connecting does not keep that connection, and the old result is not reported (status back to idle); the next refresh connects again. | `vi-gui worker::tests::forget_during_connect_discards_old_connection` | pass (2026-11-14) |
 
 ## SPEC-014: Cache
 | ID | Type | Description | Test location | Status |
@@ -113,6 +116,8 @@ Each test case is traced to a Spec item.
 | TC-085 | U | SSH questions (host key, passphrase) reach the GUI and the answers reach the SSH layer; a dialog closed without an answer means "no". | `vi-gui prompts::tests::answers_reach_the_ssh_layer` | pass (2026-11-13) |
 | TC-086 | U | Identical other devices are grouped with a count (e.g. 15 × `pcie-root-port`); an empty cdrom shows "empty drive", a disk without size "size unknown". | `vi-gui view::tests::grouping_and_disk_text` | pass (2026-11-13) |
 | TC-087 | U | Every view draws without a display: no selection, host, running/stopped/broken VM, filter, dialogs and settings. | `vi-gui tests/app.rs::all_views_render_headless` | pass (2026-11-13) |
+| TC-088 | U | Keyboard: Up/Down/Home/End move through the tree in display order (filter and collapsed hosts respected, clamped at the ends); Enter refreshes the selected host. | `vi-gui tests/app.rs::keyboard_navigation_order` (movement); Enter: manual | pass (2026-11-14) |
+| TC-089 | U | `[ui] refresh_on_start = true` refreshes every host on the first frame; with the default (`false`) nothing connects. | `vi-gui tests/app.rs::refresh_on_start`; `vi-core config::tests::example_config_parses` | pass (2026-11-14) |
 | TC-083 | U | The log file is created in the platform log directory at the configured level. | `vi-core logging::tests::writes_log_file_at_level, other_crates_only_warn` | pass (2026-11-13) |
 | TC-084 | U | An invalid `logging.level` is a config error. | `vi-core config::tests::invalid_log_level_rejected` | pass (2026-11-13) |
 

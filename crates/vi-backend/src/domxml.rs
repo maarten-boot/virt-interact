@@ -80,6 +80,7 @@ fn general(root: Node) -> General {
             .and_then(|n| n.attribute("id").map(str::to_string))
     });
     General {
+        uuid: text(child(root, "uuid")),
         domain_type: root.attribute("type").map(str::to_string),
         os_type: text(os_type),
         arch: attr(os_type, "arch"),

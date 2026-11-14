@@ -215,6 +215,9 @@ impl LibvirtBackend {
                 Err(e) => debug!(domain = %name, error = %e, "domblkinfo failed"),
             }
         }
+        if d.uuid.is_none() {
+            d.uuid = details.general.uuid.clone();
+        }
         d.details = Some(details);
         Ok(DomainOutcome {
             domain: Some(d),

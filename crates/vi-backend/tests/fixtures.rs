@@ -148,6 +148,10 @@ fn bios_vm_components() {
     .unwrap();
     assert_eq!(d.general.firmware, Firmware::Bios);
     assert_eq!(d.general.domain_type.as_deref(), Some("kvm"));
+    assert_eq!(
+        d.general.uuid.as_deref(),
+        Some("5d8e6162-dc22-47c8-8d0d-e8630ff4f036")
+    );
     assert_eq!(d.general.machine.as_deref(), Some("pc-q35-noble"));
     assert_eq!(d.general.guest_os(), Some("ubuntu/25.10"));
     assert_eq!((d.cpu.current, d.cpu.max), (Some(4), Some(4)));
@@ -475,4 +479,21 @@ async fn domains_are_queried_in_parallel() {
     );
     let one = run(1).await;
     assert!(one >= Duration::from_secs(8), "{one:?}");
+}
+
+// TC-041a: without a UUID in `dominfo`, the UUID comes from the XML.
+#[tokio::test]
+async fn uuid_falls_back_to_xml() {
+    let b = backend();
+    let m = small_host(&b, &["x"]).with(
+        &b.command_line(&VirshCommand::DumpXml("x".into())),
+        CommandOutput::ok(
+            "<domain><name>x</name><uuid> 00000000-0000-4000-8000-00000000000a </uuid></domain>",
+        ),
+    );
+    let inv = b.inventory(&m).await.unwrap();
+    assert_eq!(
+        inv.domains[0].uuid.as_deref(),
+        Some("00000000-0000-4000-8000-00000000000a")
+    );
 }

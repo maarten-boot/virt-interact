@@ -105,7 +105,10 @@ pub struct DomainDetails {
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct General {
+    /// `<uuid>` from the XML (fallback when `dominfo` gives none).
+    pub uuid: Option<String>,
     /// Hypervisor type from `<domain type=..>`, e.g. `kvm`.
     pub domain_type: Option<String>,
     /// e.g. `hvm`.

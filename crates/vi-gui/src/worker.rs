@@ -128,7 +128,46 @@ impl Connector for SshConnector {
     }
 }
 
-type Sessions = Arc<Mutex<HashMap<String, Arc<dyn CommandRunner>>>>;
+/// Kept connections, with a generation per host. `forget` raises the
+/// generation, so a refresh that was already running when the host was
+/// edited, removed or the config reloaded cannot store its (old) connection
+/// or report its (old) result (crosscheck 2026-11-14-01, C1).
+#[derive(Default)]
+struct SessionTable {
+    map: HashMap<String, Arc<dyn CommandRunner>>,
+    generation: HashMap<String, u64>,
+    epoch: u64,
+}
+
+/// Identifies the settings a refresh started with.
+type Token = (u64, u64);
+
+impl SessionTable {
+    fn token(&self, host: &str) -> Token {
+        (self.generation.get(host).copied().unwrap_or(0), self.epoch)
+    }
+
+    fn forget(&mut self, host: &str) {
+        self.map.remove(host);
+        *self.generation.entry(host.to_string()).or_default() += 1;
+    }
+
+    fn forget_all(&mut self) {
+        self.map.clear();
+        self.epoch += 1;
+    }
+
+    /// Store `r` only if nothing was forgotten since `token` was taken.
+    fn store(&mut self, host: &str, token: Token, r: Arc<dyn CommandRunner>) -> bool {
+        if self.token(host) != token {
+            return false;
+        }
+        self.map.insert(host.to_string(), r);
+        true
+    }
+}
+
+type Sessions = Arc<Mutex<SessionTable>>;
 
 pub struct Worker {
     rt: tokio::runtime::Runtime,
@@ -200,13 +239,20 @@ impl Worker {
         true
     }
 
-    /// Drop the kept connection of a host (host edited or removed).
-    pub fn forget(&self, host: &str) {
-        self.sessions.lock().expect("lock").remove(host);
+    /// Is a connection to `host` kept open?
+    pub fn has_session(&self, host: &str) -> bool {
+        self.sessions.lock().expect("lock").map.contains_key(host)
     }
 
+    /// Drop the kept connection of a host (host edited or removed). A
+    /// refresh still running for it is discarded when it finishes.
+    pub fn forget(&self, host: &str) {
+        self.sessions.lock().expect("lock").forget(host);
+    }
+
+    /// Drop all connections (config reloaded).
     pub fn forget_all(&self) {
-        self.sessions.lock().expect("lock").clear();
+        self.sessions.lock().expect("lock").forget_all();
     }
 }
 
@@ -239,11 +285,14 @@ impl TaskCtx {
             Ok(b) => b,
             Err(e) => return self.status(&name, HostStatus::Error(HostError::from(&e))),
         };
-        let existing = self.sessions.lock().expect("lock").get(&name).cloned();
+        let (token, existing) = {
+            let t = self.sessions.lock().expect("lock");
+            (t.token(&name), t.map.get(&name).cloned())
+        };
         let reused = existing.is_some();
         let runner = match existing {
             Some(r) => r,
-            None => match self.connect(&host, &ssh).await {
+            None => match self.connect(&host, &ssh, token).await {
                 Ok(r) => r,
                 Err(e) => return self.status(&name, HostStatus::Error(HostError::from(&e))),
             },
@@ -254,14 +303,20 @@ impl TaskCtx {
             // The kept connection died (host rebooted, network change):
             // reconnect once.
             tracing::info!(host = %name, "connection lost; reconnecting");
-            self.sessions.lock().expect("lock").remove(&name);
-            match self.connect(&host, &ssh).await {
+            self.sessions.lock().expect("lock").map.remove(&name);
+            match self.connect(&host, &ssh, token).await {
                 Ok(r) => {
                     self.status(&name, HostStatus::Refreshing);
                     result = backend.inventory(&*r).await;
                 }
                 Err(e) => result = Err(e),
             }
+        }
+        if self.sessions.lock().expect("lock").token(&name) != token {
+            // Host edited/removed or config reloaded meanwhile: this result
+            // belongs to the old settings.
+            tracing::info!(host = %name, "discarding refresh started with old settings");
+            return self.status(&name, HostStatus::Idle);
         }
         match result {
             Ok(inventory) => {
@@ -275,7 +330,7 @@ impl TaskCtx {
             }
             Err(e) => {
                 if connection_lost(&e) {
-                    self.sessions.lock().expect("lock").remove(&name);
+                    self.sessions.lock().expect("lock").map.remove(&name);
                 }
                 tracing::warn!(host = %name, error = %e, "refresh failed");
                 self.status(&name, HostStatus::Error(HostError::from(&e)));
@@ -287,16 +342,19 @@ impl TaskCtx {
         &self,
         host: &HostConfig,
         ssh: &SshSettings,
+        token: Token,
     ) -> Result<Arc<dyn CommandRunner>, BackendError> {
         self.status(&host.name, HostStatus::Connecting);
         let r = self
             .connector
             .connect(host, ssh, self.prompter.as_ref())
             .await?;
+        // Not kept if the host was forgotten while connecting (C1); it is
+        // still used for this refresh, whose result is then discarded.
         self.sessions
             .lock()
             .expect("lock")
-            .insert(host.name.clone(), r.clone());
+            .store(&host.name, token, r.clone());
         Ok(r)
     }
 }
@@ -366,6 +424,9 @@ mod tests {
                         addr: format!("{}:22", host.host),
                         source: std::io::Error::from(std::io::ErrorKind::ConnectionRefused),
                     }));
+                }
+                if host.name.starts_with("slow") {
+                    tokio::time::sleep(Duration::from_millis(300)).await;
                 }
                 let delay = host
                     .name
@@ -469,5 +530,47 @@ mod tests {
 
         w.refresh(host("hang2"), SshSettings::default());
         assert!(!w.refresh(host("hang2"), SshSettings::default()));
+    }
+
+    fn wait_idle(w: &Worker, host: &str) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while w.is_running(host) {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    // TC-066a: a host forgotten while connecting does not keep the old
+    // connection, and the old result is not reported.
+    #[test]
+    fn forget_during_connect_discards_old_connection() {
+        let (w, rx, c) = worker();
+        assert!(w.refresh(host("slow1"), SshSettings::default()));
+        std::thread::sleep(Duration::from_millis(50));
+        w.forget("slow1");
+        wait_idle(&w, "slow1");
+        let statuses: Vec<HostStatus> = rx
+            .try_iter()
+            .map(|e| match e {
+                Event::Status { status, .. } => status,
+                Event::Inventory { .. } => panic!("old result reported"),
+            })
+            .collect();
+        assert_eq!(statuses.last(), Some(&HostStatus::Idle), "{statuses:?}");
+        assert!(!w.has_session("slow1"));
+
+        // Same with forget_all (config reload).
+        w.refresh(host("slow2"), SshSettings::default());
+        std::thread::sleep(Duration::from_millis(50));
+        w.forget_all();
+        wait_idle(&w, "slow2");
+        assert!(!w.has_session("slow2"));
+
+        // The next refresh connects again and keeps that connection.
+        w.refresh(host("slow1"), SshSettings::default());
+        let s = until_done(&rx, &["slow1"]);
+        assert!(matches!(s["slow1"].last(), Some(HostStatus::Ok(_))));
+        assert!(w.has_session("slow1"));
+        assert_eq!(c.connects.load(Ordering::SeqCst), 3);
     }
 }

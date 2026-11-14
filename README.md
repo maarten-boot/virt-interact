@@ -67,6 +67,10 @@ Unknown host keys and key passphrases are asked in a dialog. The SSH
 connection of each host stays open while the app runs, so later refreshes
 do not ask again.
 
+To refresh automatically at startup, set `refresh_on_start = true` under
+`[ui]` (see `examples/config.example.toml`). In the tree, Up/Down/Home/End
+move the selection and Enter refreshes the selected host.
+
 Contrast is set under **Settings…**; the choice is saved to the config.
 Logs go to `<local data dir>/virt-interact/logs/` (on Linux
 `~/.local/share/virt-interact/logs/`); set `RUST_LOG` to override the level.
@@ -110,7 +114,7 @@ committing (see `tests/fixtures/README.md`).
 | `crates/vi-core` | config, paths/CLI, contrast/palette maths, logging, model types, cache |
 | `crates/vi-ssh` | `~/.ssh/config` parsing, SSH sessions, auth, known_hosts, command runner, tunnels |
 | `crates/vi-backend` | hypervisor backends (libvirt via virsh) |
-| `crates/vi-gui` | the `virt-interact` binary: GUI and theme |
+| `crates/vi-gui` | the GUI as a library (app, background worker, SSH prompts, view logic, theme) plus the thin `virt-interact` binary |
 | `examples/` | example config and ssh config (kept valid by unit tests) |
 | `scripts/` | `anonymise_fixtures.py` for new virsh captures |
 | `tests/fixtures` | anonymised virsh output for parser tests |

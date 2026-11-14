@@ -196,6 +196,10 @@ pub struct App {
     prompt_rx: Option<Receiver<PromptRequest>>,
     prompts: VecDeque<PromptRequest>,
     open_prompt: Option<OpenPrompt>,
+    /// `[ui] refresh_on_start` handled (first frame only).
+    started: bool,
+    /// Scroll the tree to the selection (after keyboard navigation).
+    scroll_to_selection: bool,
 }
 
 impl App {
@@ -223,6 +227,8 @@ impl App {
             prompt_rx: None,
             prompts: VecDeque::new(),
             open_prompt: None,
+            started: false,
+            scroll_to_selection: false,
         };
         app.sync_hosts();
         app
@@ -303,10 +309,16 @@ impl App {
         let ssh = self.store.config.ssh.clone();
         match &self.worker {
             Some(w) => {
+                let reuse = w.has_session(name);
                 if w.refresh(h, ssh)
                     && let Some(e) = self.hosts.get_mut(name)
                 {
-                    e.status = HostStatus::Connecting;
+                    // A kept connection is reused: no "connecting" step (C6).
+                    e.status = if reuse {
+                        HostStatus::Refreshing
+                    } else {
+                        HostStatus::Connecting
+                    };
                 }
             }
             None => self.messages.push(Message::error(
@@ -511,6 +523,14 @@ impl App {
                 .push(Message::error(format!("Config not reloaded: {e}")));
             return;
         }
+        // Cache files of hosts that are gone from the file (C5).
+        if let Some(c) = &self.cache {
+            for old in &self.store.config.hosts {
+                if !store.config.hosts.iter().any(|h| h.name == old.name) {
+                    let _ = c.remove(&old.name);
+                }
+            }
+        }
         self.store = store;
         if let Some(w) = &self.worker {
             w.forget_all();
@@ -571,12 +591,115 @@ impl App {
         }
     }
 
+    // ---- keyboard navigation (SPEC-015) ----------------------------------
+
+    /// Tree rows in display order: each host, then its VMs that match the
+    /// filter if the host is expanded (`is_open`).
+    pub fn visible_items(&self, is_open: impl Fn(&str) -> bool) -> Vec<Selection> {
+        let mut out = Vec::new();
+        for h in &self.store.config.hosts {
+            out.push(Selection::Host(h.name.clone()));
+            if !is_open(&h.name) {
+                continue;
+            }
+            if let Some(s) = self.hosts.get(&h.name).and_then(|e| e.shown.as_ref()) {
+                for d in s
+                    .inventory
+                    .domains
+                    .iter()
+                    .filter(|d| self.filter.matches(d))
+                {
+                    out.push(Selection::Domain(h.name.clone(), d.name.clone()));
+                }
+            }
+        }
+        out
+    }
+
+    /// Move the selection `delta` rows (Up = -1, Down = +1), clamped. With
+    /// nothing selected, Down selects the first row and Up the last.
+    pub fn move_selection(&mut self, delta: i32, is_open: impl Fn(&str) -> bool) {
+        let items = self.visible_items(is_open);
+        if items.is_empty() {
+            return;
+        }
+        let last = items.len() as i32 - 1;
+        let next = match items.iter().position(|i| *i == self.selection) {
+            Some(p) => (p as i32).saturating_add(delta).clamp(0, last),
+            None if delta > 0 => 0,
+            None => last,
+        };
+        self.selection = items[next as usize].clone();
+        self.scroll_to_selection = true;
+    }
+
+    fn modal_open(&self) -> bool {
+        self.host_form.is_some() || self.confirm_remove.is_some() || self.open_prompt.is_some()
+    }
+
+    /// Up/Down move through the tree, Home/End jump, Enter refreshes the
+    /// selected host. Ignored while typing or while a dialog is open.
+    fn keyboard(&mut self, ctx: &egui::Context) {
+        if self.modal_open() || ctx.egui_wants_keyboard_input() {
+            return;
+        }
+        let (up, down, home, end, enter) = ctx.input(|i| {
+            (
+                i.key_pressed(egui::Key::ArrowUp),
+                i.key_pressed(egui::Key::ArrowDown),
+                i.key_pressed(egui::Key::Home),
+                i.key_pressed(egui::Key::End),
+                i.key_pressed(egui::Key::Enter),
+            )
+        });
+        let is_open = |h: &str| {
+            egui::collapsing_header::CollapsingState::load(ctx, tree_id(h))
+                .is_none_or(|s| s.is_open())
+        };
+        if up {
+            self.move_selection(-1, is_open);
+        } else if down {
+            self.move_selection(1, is_open);
+        } else if home {
+            self.move_selection(-i32::MAX, is_open);
+        } else if end {
+            self.move_selection(i32::MAX, is_open);
+        } else if enter
+            && let Some(h) = self.selection.host().map(str::to_string)
+            && !self.hosts.get(&h).is_some_and(|e| e.status.busy())
+        {
+            self.refresh(&h);
+        }
+    }
+
+    /// A button; when disabled its text uses the palette's disabled colour,
+    /// because fading is off (SPEC-001, C2).
+    fn button(&self, ui: &mut egui::Ui, enabled: bool, text: &str) -> egui::Response {
+        let label = RichText::new(text).color(button_color(&self.palette, enabled));
+        ui.add_enabled(enabled, egui::Button::new(label))
+    }
+
     // ---- drawing -------------------------------------------------------
 
     /// Draw the whole window into `ui`.
     pub fn show(&mut self, ui: &mut egui::Ui) {
         self.poll();
         let ctx = ui.ctx().clone();
+        if !self.started {
+            self.started = true;
+            if self.store.config.ui.refresh_on_start && self.worker.is_some() {
+                self.refresh_all();
+            }
+        }
+        self.keyboard(&ctx);
+        // Keep "5 min ago" texts current while idle (C4).
+        if self
+            .hosts
+            .values()
+            .any(|e| e.shown.is_some() || matches!(e.status, HostStatus::Ok(_)))
+        {
+            ctx.request_repaint_after(std::time::Duration::from_secs(30));
+        }
         egui::Panel::top("toolbar").show(ui, |ui| {
             self.toolbar(ui);
             self.messages_bar(ui);
@@ -607,22 +730,16 @@ impl App {
                 .as_deref()
                 .and_then(|h| self.hosts.get(h))
                 .is_some_and(|e| e.status.busy());
-            if ui
-                .add_enabled(
-                    sel.is_some() && !busy,
-                    egui::Button::new("Refresh selected"),
-                )
+            if self
+                .button(ui, sel.is_some() && !busy, "Refresh selected")
                 .on_hover_text("Refresh the inventory of the selected host")
                 .clicked()
                 && let Some(h) = &sel
             {
                 self.refresh(h);
             }
-            if ui
-                .add_enabled(
-                    !self.store.config.hosts.is_empty(),
-                    egui::Button::new("Refresh all"),
-                )
+            if self
+                .button(ui, !self.store.config.hosts.is_empty(), "Refresh all")
                 .clicked()
             {
                 self.refresh_all();
@@ -701,15 +818,16 @@ impl App {
             let Some(entry) = self.hosts.get(&name) else {
                 continue;
             };
-            let id = ui.make_persistent_id(("host", &name));
+            let id = tree_id(&name);
             let status = self.status_text(&entry.status);
             let selected = self.selection == Selection::Host(name.clone());
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
                 .show_header(ui, |ui| {
-                    if ui
-                        .selectable_label(selected, RichText::new(&name).strong())
-                        .clicked()
-                    {
+                    let r = ui.selectable_label(selected, RichText::new(&name).strong());
+                    if selected && self.scroll_to_selection {
+                        r.scroll_to_me(None);
+                    }
+                    if r.clicked() {
                         new_sel = Some(Selection::Host(name.clone()));
                     }
                     ui.label(status);
@@ -737,7 +855,11 @@ impl App {
                                 self.selection == Selection::Domain(name.clone(), d.name.clone());
                             let (badge, col) = view::state_badge(&d.state);
                             ui.horizontal(|ui| {
-                                if ui.selectable_label(sel, &d.name).clicked() {
+                                let r = ui.selectable_label(sel, &d.name);
+                                if sel && self.scroll_to_selection {
+                                    r.scroll_to_me(None);
+                                }
+                                if r.clicked() {
                                     new_sel = Some(Selection::Domain(name.clone(), d.name.clone()));
                                 }
                                 ui.label(RichText::new(badge).color(self.state_color(col)));
@@ -760,6 +882,7 @@ impl App {
                     }
                 });
         }
+        self.scroll_to_selection = false;
         if let Some(s) = new_sel {
             self.selection = s;
         }
@@ -785,8 +908,9 @@ impl App {
         };
         ui.heading(&cfg.name);
         ui.horizontal(|ui| {
-            if ui
-                .add_enabled(!entry.status.busy(), egui::Button::new("Refresh"))
+            if self
+                .button(ui, !entry.status.busy(), "Refresh")
+                .on_hover_text("Shortcut: Enter in the tree")
                 .clicked()
             {
                 self.refresh(name);
@@ -1340,15 +1464,32 @@ impl App {
                 request,
                 mut passphrase,
             } = self.open_prompt.take().expect("prompt");
+            // Always move the buffer into a Secret, which wipes it on drop,
+            // also when the key is skipped (C3).
+            let secret = Secret::new(std::mem::take(&mut passphrase));
             match a {
                 Answer::HostKey(yes) => request.answer_host_key(yes),
-                Answer::Passphrase(true) if !passphrase.is_empty() => {
-                    request.answer_passphrase(Some(Secret::new(std::mem::take(&mut passphrase))))
+                Answer::Passphrase(true) if !secret.expose().is_empty() => {
+                    request.answer_passphrase(Some(secret))
                 }
-                Answer::Passphrase(_) => request.answer_passphrase(None),
+                Answer::Passphrase(_) => {
+                    drop(secret);
+                    request.answer_passphrase(None)
+                }
             }
         }
     }
+}
+
+/// Persistent id of a host's node in the tree (also read by the keyboard
+/// navigation to know whether the host is expanded).
+fn tree_id(host: &str) -> egui::Id {
+    egui::Id::new(("host-tree", host))
+}
+
+/// Text colour of a button: normal, or the palette's disabled colour.
+pub fn button_color(p: &Palette, enabled: bool) -> Color32 {
+    theme::c(if enabled { p.text } else { p.disabled_text })
 }
 
 /// One label/value row of a two-column grid.
