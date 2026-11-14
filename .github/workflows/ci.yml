@@ -35,8 +35,9 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
           components: rustfmt, clippy
-          # SPEC-002: also build macOS x86_64 (cross-compiled on the aarch64 runner)
-          targets: ${{ runner.os == 'macOS' && 'x86_64-apple-darwin' || '' }}
+          # SPEC-002: macOS archives are universal (arm64 + x86_64, the
+          # latter cross-compiled on the aarch64 runner)
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - uses: Swatinem/rust-cache@v2
 
@@ -51,21 +52,16 @@ jobs:
         # --no-fail-fast: one failing test binary must not hide the others
         run: cargo test --workspace --locked --no-fail-fast
 
-      - name: Build release binary
+      # TC-120: every push also builds the release archive of its platform.
+      - name: Package
         if: matrix.toolchain == 'stable'
-        run: cargo build --release --locked -p vi-gui
+        shell: bash
+        run: bash scripts/package.sh ${{ runner.os == 'Linux' && 'linux' || runner.os == 'Windows' && 'windows' || 'macos' }} dist
 
-      - name: Build macOS x86_64 binary (cross)
-        if: runner.os == 'macOS' && matrix.toolchain == 'stable'
-        run: cargo build --release --locked -p vi-gui --target x86_64-apple-darwin
-
-      - name: Upload binary
+      - name: Upload archive
         if: matrix.toolchain == 'stable'
         uses: actions/upload-artifact@v4
         with:
           name: virt-interact-${{ matrix.os }}
-          path: |
-            target/release/virt-interact
-            target/release/virt-interact.exe
-            target/x86_64-apple-darwin/release/virt-interact
+          path: dist/*
           if-no-files-found: error

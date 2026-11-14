@@ -1,5 +1,10 @@
 //! virt-interact: command line, config, logging, then the GUI (SPEC-003).
 
+// Windows release builds are GUI programs: no console window behind the
+// app. Output of `--help`/`--version` is then not shown in a console
+// (README); debug builds keep the console for development.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use eframe::egui;
 use vi_core::cache::Cache;
 use vi_core::config::ConfigStore;

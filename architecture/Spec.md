@@ -25,6 +25,11 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
 - Runs on Windows 10+ (x86_64), Linux (x86_64), and macOS 12+ (x86_64 and aarch64). CI builds all of them; macOS x86_64 is cross-compiled on an aarch64 runner (build only, no tests).
 - Written in Rust (stable toolchain) and built from one code base.
 - The client needs no libvirt installation. It only needs network access to the hosts.
+- **Distribution (v1):** one archive per platform, built by CI from a version tag, with the README, `Changes.md`, the example configs and a SHA-256 checksum file:
+  - Linux: `virt-interact-<ver>-linux-x86_64.tar.gz`, built on Ubuntu 22.04 (glibc 2.35 or newer needed);
+  - Windows: `virt-interact-<ver>-windows-x86_64.zip`; the release binary is a GUI program (no console window);
+  - macOS: `virt-interact-<ver>-macos-universal.zip` with `virt-interact.app` (arm64 + x86_64, macOS 12+), ad-hoc signed but not notarized: the first start needs "Open Anyway" in System Settings → Privacy & Security.
+  - Installers (MSI, AppImage/deb) and notarization are later work.
 
 ### SPEC-003: GUI toolkit (v1)
 - The GUI uses `egui`/`eframe`.

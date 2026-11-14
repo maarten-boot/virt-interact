@@ -84,3 +84,21 @@ Everything waits for the user's OK.
 - `virsh` search path for macOS (Homebrew), local labels from the URI, cache cleanup in one place.
 - 5 new tests; the two layout tests were checked to fail on the old code. 124 tests pass, fmt and clippy clean.
 - Under Xvfb the separator no longer moves on hover, and a dragged width survives a restart.
+
+## 6. Phase 5.1: packaging
+**User:** Pushed (the crosscheck 02 fixes), then: start phase 5.
+
+**Claude:** CI run 43620543803 passed: 124 tests on Linux, macOS and MSRV; 117 on Windows (7 unix-only). Phase 5.1:
+- `scripts/package.sh linux|windows|macos` builds the release binary and writes an archive with its `.sha256` file. It checks the archive's contents.
+  - Linux: tar.gz, built on Ubuntu 22.04 for glibc 2.35.
+  - Windows: zip; the release binary uses the GUI subsystem, so no console window opens.
+  - macOS: a universal `.app` in a zip, ad-hoc signed but not notarized, for macOS 12+.
+- The release profile uses thin LTO and strips symbols.
+- CI now packages on every push.
+- `.github/workflows/release.yml`: a `v<version>` tag that matches the Cargo version runs the tests and packaging on all three platforms. It then creates a draft GitHub release with the `Changes.md` section (`scripts/release_notes.sh`).
+- Tested locally on Linux:
+  - the archive unpacks and `--version` runs;
+  - the first archive recorded the local user name as file owner, so tar now writes owner 0/0.
+- Spec (SPEC-002 distribution), Plan 5.1, TestCases (TC-120, TC-121), README (Install), Changes.
+
+Open: there is no LICENSE file yet. That is the user's choice; the package script includes `LICENSE*` once one exists.

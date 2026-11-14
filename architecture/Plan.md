@@ -82,8 +82,8 @@ tests/fixtures/  captured virsh outputs (XML, list, domblkinfo) for parser tests
 - [ ] 4.9 Manual check on a real desktop against a real host (TC-081, TC-006 on Windows/macOS): refresh, host key and passphrase dialogs, clipboard.
 
 ### Phase 5: Release v1
-- [ ] 5.1 Packaging: Windows (zip, later MSI), Linux (tar.gz, later AppImage/deb), macOS (.app; signing and notarization to be decided).
-- [ ] 5.2 Crosscheck. Update `Changes.md` and tag `v1.0.0`.
+- [x] 5.1 Packaging (SPEC-002 distribution): `scripts/package.sh` builds and checks the archive per platform: Linux tar.gz (built on Ubuntu 22.04), Windows zip (GUI subsystem, no console), macOS universal `.app` in a zip (ad-hoc signed, not notarized). Release profile with thin LTO and stripped symbols. CI packages on every push (TC-120); `.github/workflows/release.yml` tests and packages all platforms for a `v<version>` tag and creates a **draft** GitHub release with the `Changes.md` section (`scripts/release_notes.sh`). Later: MSI, AppImage/deb, notarization. (2026-11-14)
+- [ ] 5.2 Crosscheck. Version 1.0.0 in `Cargo.toml`, `## 1.0.0` section in `Changes.md`; the user pushes tag `v1.0.0`, checks the draft release (TC-121) and publishes it.
 
 ### Phase 6: v1.1 remote viewing (SPEC-018)
 - [ ] 6.1 Local listener and `direct-tcpip` / `direct-streamlocal` forwarding.

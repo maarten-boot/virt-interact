@@ -8,8 +8,27 @@ follows in v1.1.
 Status: phases 2–4 done (config, contrast/theme, logging, SSH layer,
 libvirt inventory backend, GUI with host/VM tree, details, cache and host
 dialogs). Open: manual checks on a real desktop, on Windows and macOS.
-Packaging (phase 5) is next. See `architecture/Spec.md` and
+Packaging (phase 5) is in place; v1.0.0 is next. See `architecture/Spec.md` and
 `architecture/Plan.md`; changes per release are in `Changes.md`.
+
+## Install
+
+Download the archive for your platform from the GitHub releases page and
+compare it with its `.sha256` file:
+
+- **Linux** (`…-linux-x86_64.tar.gz`): unpack and run `./virt-interact`.
+  Needs glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or later)
+  and a desktop with X11 or Wayland and OpenGL.
+- **Windows** (`…-windows-x86_64.zip`): unpack and run `virt-interact.exe`.
+  It is a GUI program, so `--help` and `--version` print nothing in a
+  console; use the README instead.
+- **macOS** (`…-macos-universal.zip`, Apple Silicon and Intel, macOS 12+):
+  unpack and move `virt-interact.app` to Applications. The app is not
+  notarized: the first start is blocked; open it once via System Settings →
+  Privacy & Security → "Open Anyway" (or run
+  `xattr -d com.apple.quarantine /Applications/virt-interact.app`).
+
+Each archive also holds `Changes.md` and the example configs.
 
 ## Build
 
@@ -126,7 +145,8 @@ committing (see `tests/fixtures/README.md`).
 | `crates/vi-backend` | hypervisor backends (libvirt via virsh), local runner for this machine |
 | `crates/vi-gui` | the GUI as a library (app, background worker, SSH prompts, view logic, theme) plus the thin `virt-interact` binary |
 | `examples/` | example config and ssh config (kept valid by unit tests) |
-| `scripts/` | `anonymise_fixtures.py` for new virsh captures |
+| `scripts/` | `package.sh` (release archive per platform), `release_notes.sh`, `anonymise_fixtures.py` (new virsh captures) |
+| `packaging/` | platform files for the archives (macOS `Info.plist`) |
 | `tests/fixtures` | anonymised virsh output for parser tests |
 | `architecture/` | Spec, Plan, TestCases, conversation logs, crosschecks |
 | `Changes.md` | changes between releases |

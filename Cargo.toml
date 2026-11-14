@@ -26,6 +26,12 @@ russh = { version = "0.65", default-features = false, features = ["ring", "rsa",
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util", "fs"] }
 eframe = { version = "0.35", features = ["persistence"] }   # 0.36+ needs rustc 1.95; local toolchain is 1.93. persistence: tree width etc. kept between runs
 
+# Release archives (Plan 5.1): smaller, faster binaries, no debug symbols.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
