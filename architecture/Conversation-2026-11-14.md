@@ -56,3 +56,7 @@ Asked whether `qemu:///session` should be included too.
 - Checked under Xvfb with that fake `virsh` on `PATH`: detected, refreshed and details shown (TC-116).
 
 This machine has no libvirt, so the check against a real local libvirt is for the user.
+
+**User:** Pushed.
+
+**Claude:** Run 43602996692: all four jobs pass. 119 tests on Linux, macOS and MSRV 1.92; 114 on Windows, where 5 unix-only tests are skipped. The local-host code compiles on Windows. TC-010 updated.

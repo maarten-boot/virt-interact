@@ -19,7 +19,7 @@ Each test case is traced to a Spec item.
 ## SPEC-002 / SPEC-003: Platforms and GUI
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-010 | CI | Build and tests pass on windows-latest, ubuntu-latest and macos-latest (aarch64), plus an x86_64-apple-darwin build and the MSRV job. | `.github/workflows/ci.yml` | pass: run 43599218266 (2026-11-14, phase 4 + crosscheck fixes), all 4 jobs green; 113 tests on Linux/macOS/MSRV, 112 on Windows (the `sh` quoting check is unix-only) |
+| TC-010 | CI | Build and tests pass on windows-latest, ubuntu-latest and macos-latest (aarch64), plus an x86_64-apple-darwin build and the MSRV job. | `.github/workflows/ci.yml` | pass: run 43602996692 (2026-11-14, local host), all 4 jobs green; 119 tests on Linux/macOS/MSRV, 114 on Windows (5 unix-only tests: `sh` quoting, local runner, local inventory, local connector) |
 | TC-011 | M | The GUI starts on all three platforms with an empty config. | — | Linux: pass under Xvfb (2026-11-13); Windows/macOS: open |
 
 ## SPEC-004 / SPEC-005: Config and hosts
