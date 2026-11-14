@@ -102,3 +102,7 @@ Everything waits for the user's OK.
 - Spec (SPEC-002 distribution), Plan 5.1, TestCases (TC-120, TC-121), README (Install), Changes.
 
 Open: there is no LICENSE file yet. That is the user's choice; the package script includes `LICENSE*` once one exists.
+
+**User:** Pushed.
+
+**Claude:** Run 43624762252 passed: 124 tests on Linux, macOS and MSRV; 117 on Windows. All three archives were built and passed their content checks; the macOS binary holds x86_64 and arm64, and its signature verifies. TC-010 and TC-120 updated. Still open: a licence (the user's choice), a crosscheck, then Plan 5.2.
