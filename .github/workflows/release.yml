@@ -53,6 +53,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # Third-party licence notices for the archive (about.toml).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.3
+
       - name: Test
         run: cargo test --workspace --locked --no-fail-fast
 

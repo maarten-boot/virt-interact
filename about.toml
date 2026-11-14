@@ -1,0 +1,32 @@
+# cargo-about: third-party licence notices for the release archives
+# (scripts/package.sh, crosscheck 2026-11-14-03 C2). Generation fails when a
+# dependency brings a licence that is not accepted here: review it, then add
+# it. For "A OR B" the first accepted one is used (e.g. self_cell:
+# Apache-2.0, not GPL-2.0).
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "BSL-1.0",           # Boost; Windows clipboard (clipboard-win, error-code)
+    "MPL-2.0",           # file-level copyleft: unchanged; source linked per crate
+    "OFL-1.1",           # egui's embedded fonts
+    "Ubuntu-font-1.0",   # egui's embedded fonts
+]
+# Every platform we ship, so one file covers all archives.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# Our own crates (publish = false) are covered by LICENSE.
+private = { ignore = true }
+workarounds = ["ring"]

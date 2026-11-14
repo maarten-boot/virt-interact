@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>virt-interact: third-party licences</title>
+<style>
+  /* Black on white, as the app (SPEC-001). */
+  body { background: #fff; color: #000; font-family: sans-serif; max-width: 60em; margin: 2em auto; padding: 0 1em; }
+  a { color: #0645ad; }
+  pre { white-space: pre-wrap; background: #f4f4f4; color: #000; padding: 1em; border: 1px solid #000; }
+  li { margin: 0.1em 0; }
+</style>
+</head>
+<body>
+<h1>Third-party licences</h1>
+<p>virt-interact is MIT licensed (see <code>LICENSE</code>). It contains the
+open-source crates listed below, under these licences. The source code of
+each crate is available from the linked page on crates.io.</p>
+<h2>Overview</h2>
+<ul>
+{{#each overview}}
+  <li><a href="#{{id}}">{{name}}</a> ({{count}})</li>
+{{/each}}
+</ul>
+<h2>Licence texts</h2>
+{{#each licenses}}
+<h3 id="{{id}}">{{name}}</h3>
+<p>Used by:</p>
+<ul>
+{{#each used_by}}
+  <li><a href="https://crates.io/crates/{{crate.name}}/{{crate.version}}">{{crate.name}} {{crate.version}}</a></li>
+{{/each}}
+</ul>
+<pre>{{text}}</pre>
+{{/each}}
+</body>
+</html>

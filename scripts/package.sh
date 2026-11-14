@@ -6,7 +6,11 @@
 # Builds the release binary (cargo build --release --locked), stages it with
 # the docs and examples, writes the archive and a .sha256 file to OUT_DIR,
 # and checks that the archive holds every expected file.
-#   linux:   virt-interact-<ver>-linux-x86_64.tar.gz
+# Every archive also holds LICENSE and THIRD_PARTY_LICENSES.html (made by
+# cargo-about from about.toml; it fails when a dependency brings a licence
+# that is not accepted there, crosscheck 2026-11-14-03 C2).
+#   linux:   virt-interact-<ver>-linux-x86_64.tar.gz (with a .desktop file
+#            and the icon)
 #   windows: virt-interact-<ver>-windows-x86_64.zip
 #   macos:   virt-interact-<ver>-macos-universal.zip  (virt-interact.app,
 #            arm64 + x86_64, ad-hoc signed, not notarized; macOS 12+)
@@ -29,13 +33,16 @@ trap 'rm -rf "$work"' EXIT
 
 build() { (cd "$root" && cargo build --release --locked -p vi-gui "$@"); }
 
-# Docs and examples next to the program.
+# Third-party licence notices, once for all platforms.
+licenses=$work/THIRD_PARTY_LICENSES.html
+(cd "$root" && cargo about generate --locked --fail -o "$licenses" about.hbs)
+
+# Docs, licences and examples next to the program.
 docs() {
     local d=$1
     mkdir -p "$d/examples"
-    cp "$root/README.md" "$root/Changes.md" "$d/"
+    cp "$root/README.md" "$root/Changes.md" "$root/LICENSE" "$licenses" "$d/"
     cp "$root/examples/config.example.toml" "$root/examples/ssh_config.example" "$d/examples/"
-    cp "$root/LICENSE" "$d/"
 }
 
 sha256() {
@@ -48,12 +55,13 @@ linux)
     stage=$work/$name
     mkdir -p "$stage"
     cp "$target/release/virt-interact" "$stage/"
+    cp "$root/packaging/linux/virt-interact.desktop" "$root/packaging/icon/virt-interact.png" "$stage/"
     docs "$stage"
     archive=$out/$name-linux-x86_64.tar.gz
     # No local user/group names in the archive (GNU tar); stable order.
     tar --owner=0 --group=0 --numeric-owner --sort=name -czf "$archive" -C "$work" "$name"
     listing=$(tar -tzf "$archive")
-    expect=("$name/virt-interact" "$name/README.md" "$name/LICENSE" "$name/examples/config.example.toml")
+    expect=("$name/virt-interact" "$name/virt-interact.desktop" "$name/virt-interact.png")
     ;;
 windows)
     build
@@ -70,7 +78,7 @@ windows)
         (cd "$work" && zip -qr "$archive" "$name")
         listing=$(unzip -l "$archive")
     fi
-    expect=("$name/virt-interact.exe" "$name/README.md" "$name/LICENSE" "$name/examples/config.example.toml")
+    expect=("$name/virt-interact.exe")
     ;;
 macos)
     export MACOSX_DEPLOYMENT_TARGET=12.0
@@ -78,7 +86,8 @@ macos)
     build --target x86_64-apple-darwin
     stage=$work/$name
     app=$stage/virt-interact.app
-    mkdir -p "$app/Contents/MacOS"
+    mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+    cp "$root/packaging/icon/virt-interact.icns" "$app/Contents/Resources/"
     lipo -create -output "$app/Contents/MacOS/virt-interact" \
         "$target/aarch64-apple-darwin/release/virt-interact" \
         "$target/x86_64-apple-darwin/release/virt-interact"
@@ -93,8 +102,8 @@ macos)
     ditto -c -k --keepParent "$stage" "$archive"
     listing=$(unzip -l "$archive")
     expect=("$name/virt-interact.app/Contents/MacOS/virt-interact"
-            "$name/virt-interact.app/Contents/Info.plist" "$name/README.md" "$name/LICENSE"
-            "$name/examples/config.example.toml")
+            "$name/virt-interact.app/Contents/Info.plist"
+            "$name/virt-interact.app/Contents/Resources/virt-interact.icns")
     ;;
 *)
     echo "unknown platform: $os (linux|windows|macos)" >&2
@@ -102,6 +111,9 @@ macos)
     ;;
 esac
 
+# Common to every platform.
+expect+=("$name/README.md" "$name/LICENSE" "$name/THIRD_PARTY_LICENSES.html"
+         "$name/examples/config.example.toml")
 # Normalise Windows separators in 7z listings before checking.
 listing=${listing//\\//}
 for e in "${expect[@]}"; do

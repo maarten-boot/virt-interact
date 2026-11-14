@@ -3,6 +3,7 @@
 
 pub mod app;
 pub mod prompts;
+pub mod startup;
 pub mod theme;
 pub mod view;
 pub mod worker;

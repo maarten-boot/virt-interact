@@ -18,17 +18,22 @@ compare it with its `.sha256` file:
 
 - **Linux** (`…-linux-x86_64.tar.gz`): unpack and run `./virt-interact`.
   Needs glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or later)
-  and a desktop with X11 or Wayland and OpenGL.
+  and a desktop with X11 or Wayland and OpenGL. For a menu entry with the
+  icon, copy `virt-interact` to `~/.local/bin/`, `virt-interact.desktop` to
+  `~/.local/share/applications/` and `virt-interact.png` to
+  `~/.local/share/icons/hicolor/512x512/apps/`.
 - **Windows** (`…-windows-x86_64.zip`): unpack and run `virt-interact.exe`.
-  It is a GUI program, so `--help` and `--version` print nothing in a
-  console; use the README instead.
+  It is a GUI program without a console: `--help`, `--version` and
+  start-up errors are shown in a small window.
 - **macOS** (`…-macos-universal.zip`, Apple Silicon and Intel, macOS 12+):
   unpack and move `virt-interact.app` to Applications. The app is not
   notarized: the first start is blocked; open it once via System Settings →
   Privacy & Security → "Open Anyway" (or run
   `xattr -d com.apple.quarantine /Applications/virt-interact.app`).
 
-Each archive also holds `Changes.md` and the example configs.
+Each archive also holds `LICENSE`, `THIRD_PARTY_LICENSES.html` (the
+licences of the libraries built into the program), `Changes.md` and the
+example configs.
 
 ## Build
 
@@ -145,12 +150,18 @@ committing (see `tests/fixtures/README.md`).
 | `crates/vi-backend` | hypervisor backends (libvirt via virsh), local runner for this machine |
 | `crates/vi-gui` | the GUI as a library (app, background worker, SSH prompts, view logic, theme) plus the thin `virt-interact` binary |
 | `examples/` | example config and ssh config (kept valid by unit tests) |
-| `scripts/` | `package.sh` (release archive per platform), `release_notes.sh`, `anonymise_fixtures.py` (new virsh captures) |
-| `packaging/` | platform files for the archives (macOS `Info.plist`) |
+| `scripts/` | `package.sh` (release archive per platform), `release_notes.sh`, `make_icon.py` (draws the app icon), `anonymise_fixtures.py` (new virsh captures) |
+| `packaging/` | app icon (PNG, ICO, ICNS), macOS `Info.plist`, Linux `.desktop` file |
+| `about.toml`, `about.hbs` | accepted third-party licences and the notices template (`cargo-about`, needed by `package.sh`) |
 | `tests/fixtures` | anonymised virsh output for parser tests |
 | `architecture/` | Spec, Plan, TestCases, conversation logs, crosschecks |
 | `Changes.md` | changes between releases |
 
 ## Licence
 
-MIT; see [`LICENSE`](LICENSE).
+MIT; see [`LICENSE`](LICENSE). The release archives list the licences of
+all bundled libraries in `THIRD_PARTY_LICENSES.html`, made with
+[`cargo-about`](https://github.com/EmbarkStudios/cargo-about)
+(`cargo install --locked --features cli cargo-about`); `about.toml` lists
+the accepted licences, and packaging fails when a new dependency brings
+another one.

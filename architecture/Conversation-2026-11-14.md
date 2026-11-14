@@ -122,3 +122,15 @@ Findings:
 - Improvement: an app icon.
 
 Everything waits for the user's OK.
+
+## 8. Crosscheck 03 fixes
+**User:** Apply all fixes, including the icon.
+
+**Claude:** Applied C1–C3, S1–S3, T1 and the icon (see the Resolution in `Crosscheck-2026-11-14-03.md`):
+- On Windows, a small window shows `--help`, `--version` and start-up errors.
+- Every archive has `THIRD_PARTY_LICENSES.html` from cargo-about, with a list of accepted licences. Its first run caught BSL-1.0 in two Windows-only crates; that licence is permissive and was added.
+- CI Linux runs on 22.04.
+- A new app icon is used for the window, the Windows exe, the macOS bundle and a Linux `.desktop` file.
+- Tests: TC-026a and TC-122 are new.
+
+T2 (run `release.yml` once by hand) stays as advice for the user.

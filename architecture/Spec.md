@@ -30,6 +30,8 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
   - Windows: `virt-interact-<ver>-windows-x86_64.zip`; the release binary is a GUI program (no console window);
   - macOS: `virt-interact-<ver>-macos-universal.zip` with `virt-interact.app` (arm64 + x86_64, macOS 12+), ad-hoc signed but not notarized: the first start needs "Open Anyway" in System Settings → Privacy & Security.
   - Installers (MSI, AppImage/deb) and notarization are later work.
+- **Licence:** virt-interact is MIT licensed. Every archive holds `LICENSE` and `THIRD_PARTY_LICENSES.html` with the licence texts of all bundled crates (all platforms). Only licences listed in `about.toml` are accepted; packaging fails on any other, so a new licence is reviewed before it is shipped. For a crate under "A OR B" the first accepted licence applies; no GPL-only code is included.
+- **Icon:** the app has its own icon: the window icon (all platforms), embedded in the Windows `.exe`, in the macOS app bundle, and with a `.desktop` file in the Linux archive (the window's app id is `virt-interact`).
 
 ### SPEC-003: GUI toolkit (v1)
 - The GUI uses `egui`/`eframe`.
@@ -45,7 +47,8 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
 - Command-line options:
   - `--config <path>` (or `--config=<path>`) overrides the location;
   - `-h`/`--help` prints usage; `-V`/`--version` prints the version;
-  - an unknown argument prints usage and exits with code 2.
+  - an unknown argument prints usage and exits with code 2;
+  - Windows release builds have no console: this output, and start-up errors such as an unknown config directory, are shown in a small window with an OK button (same exit codes).
 - `[ui]` keys: `contrast` (SPEC-001) and `refresh_on_start` (bool, default `false`; SPEC-012).
 - `[local]` keys: `enabled`, `libvirt_uri`, `virsh_prefix`, `session` (SPEC-020).
 - If the file is missing, the app starts with defaults and creates the file the first time it saves.

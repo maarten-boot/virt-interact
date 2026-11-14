@@ -11,6 +11,8 @@
     <string>io.github.maarten-boot.virt-interact</string>
     <key>CFBundleExecutable</key>
     <string>virt-interact</string>
+    <key>CFBundleIconFile</key>
+    <string>virt-interact</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>

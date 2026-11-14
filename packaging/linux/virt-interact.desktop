@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=virt-interact
+GenericName=VM inventory
+Comment=Read-only inventory of libvirt virtual machines over SSH
+Exec=virt-interact
+Icon=virt-interact
+Terminal=false
+Categories=System;Monitor;
+StartupWMClass=virt-interact

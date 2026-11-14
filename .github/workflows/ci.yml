@@ -15,7 +15,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Linux on 22.04 (glibc 2.35): the same base as the release archive,
+        # so CI tests and packages what is released (crosscheck 03, C3).
+        os: [ubuntu-22.04, windows-latest, macos-latest]
         toolchain: [stable]
         include:
           # MSRV check (workspace rust-version)
@@ -40,6 +42,12 @@ jobs:
           targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - uses: Swatinem/rust-cache@v2
+
+      # Third-party licence notices for the archive (about.toml).
+      - uses: taiki-e/install-action@v2
+        if: matrix.toolchain == 'stable'
+        with:
+          tool: cargo-about@0.9.3
 
       - name: Format
         if: matrix.toolchain == 'stable'
