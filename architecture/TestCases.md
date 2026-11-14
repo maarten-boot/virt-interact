@@ -127,6 +127,17 @@ Each test case is traced to a Spec item.
 | TC-090 | U | The GUI depends only on the `HypervisorBackend` trait (`for_host_with`). A dummy backend compiles and is listed. | `vi-backend tests::dummy_backend_through_the_trait` | pass (2026-11-13) |
 | TC-091 | U | `MockRunner` returns canned output, gives exit 127 for unknown commands, and records every command. | `vi-ssh runner::tests::mock_runner_records_and_answers` | pass (2026-11-13) |
 
+## SPEC-020: Local host
+| ID | Type | Description | Test location | Status |
+|----|------|-------------|---------------|--------|
+| TC-110 | U | `[local]` defaults (auto, `qemu:///system`, session on); "auto" shows the entries only when `virsh` is found, "always"/"never" override; a session-only URI gives one entry; invalid mode, prefix or empty URI are config errors; host names starting with `@` are rejected; local entries are never written to the file. | `vi-core config::tests::local_section` | pass (2026-11-14) |
+| TC-111 | U | The local runner returns exit status, stdout and stderr, and enforces its time limit. | `vi-backend local::tests::runs_commands_locally` (unix) | pass (2026-11-14) |
+| TC-112 | U | `virsh` is found on a `PATH` list only as an executable file. | `vi-backend local::tests::finds_virsh_on_path` (unix) | pass (2026-11-14) |
+| TC-113 | I | Full local inventory through a fake `virsh` on `PATH` answering from a fixture set; every call has `LC_ALL=C`, `-r` and the configured URI. | `vi-backend tests/fixtures.rs::local_inventory_through_fake_virsh` (unix) | pass (2026-11-14) |
+| TC-114 | U | The GUI shows "localhost (system)" and "localhost (session)" first (per mode), without Edit/Remove; they render headless; saving the config never writes them. | `vi-gui tests/app.rs::local_entries` | pass (2026-11-14) |
+| TC-115 | U | The real connector runs local entries in the local shell (no SSH, no prompts, no known_hosts). | `vi-gui worker::tests::local_entries_do_not_use_ssh` (unix) | pass (2026-11-14) |
+| TC-116 | M | Under Xvfb with a fake `virsh` on `PATH`: local entries detected, refreshed with "Refresh selected", VM details shown. On a real machine with libvirt: open. | — | Xvfb: pass (2026-11-14); real libvirt: open |
+
 ## SPEC-018: Remote viewing (v1.1)
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|

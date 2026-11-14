@@ -14,11 +14,12 @@ thiserror.workspace = true
 tracing.workspace = true
 roxmltree = "0.21"
 futures-util = "0.3"
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true, features = ["time", "process"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
 rpassword = "7"
+tempfile.workspace = true
 dirs.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 

@@ -40,8 +40,52 @@ pub struct Config {
     pub ui: UiConfig,
     pub ssh: SshSettings,
     pub logging: LoggingConfig,
+    /// The local machine, read without SSH (SPEC-020).
+    pub local: LocalConfig,
     pub hosts: Vec<HostConfig>,
 }
+
+/// When the local libvirt is shown (SPEC-020).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LocalMode {
+    /// Shown when `virsh` is found on `PATH`.
+    #[default]
+    Auto,
+    Always,
+    Never,
+}
+
+/// `[local]`: the local libvirt, read without SSH (SPEC-020).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LocalConfig {
+    pub enabled: LocalMode,
+    /// URI of the "system" entry.
+    pub libvirt_uri: String,
+    /// Prefix for the "system" entry, e.g. `"sudo -n"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub virsh_prefix: Option<String>,
+    /// Also show the user's own VMs (`qemu:///session`).
+    pub session: bool,
+}
+
+impl Default for LocalConfig {
+    fn default() -> Self {
+        LocalConfig {
+            enabled: LocalMode::Auto,
+            libvirt_uri: DEFAULT_LIBVIRT_URI.into(),
+            virsh_prefix: None,
+            session: true,
+        }
+    }
+}
+
+/// Internal names of the local entries. Host names starting with `@` are
+/// reserved for them.
+pub const LOCAL_SYSTEM: &str = "@local-system";
+pub const LOCAL_SESSION: &str = "@local-session";
+pub const SESSION_URI: &str = "qemu:///session";
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -118,6 +162,10 @@ pub struct HostConfig {
     /// Command prefix such as `"sudo -n"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub virsh_prefix: Option<String>,
+    /// A local entry (SPEC-020): virsh runs on this machine, no SSH. Never
+    /// read from or written to the file.
+    #[serde(skip)]
+    pub local: bool,
 }
 
 fn default_libvirt_uri() -> String {
@@ -136,6 +184,20 @@ impl HostConfig {
             backend: Backend::default(),
             libvirt_uri: default_libvirt_uri(),
             virsh_prefix: None,
+            local: false,
+        }
+    }
+
+    /// Name shown in the GUI: the name, or `localhost (system|session)`
+    /// for a local entry.
+    pub fn display_name(&self) -> String {
+        if !self.local {
+            return self.name.clone();
+        }
+        if self.name == LOCAL_SESSION {
+            "localhost (session)".into()
+        } else {
+            "localhost (system)".into()
         }
     }
 
@@ -231,6 +293,32 @@ impl Config {
         Ok((config, warnings))
     }
 
+    /// The local entries to show (SPEC-020). `virsh_found`: whether `virsh`
+    /// is on `PATH` (used by `enabled = "auto"`).
+    pub fn local_hosts(&self, virsh_found: bool) -> Vec<HostConfig> {
+        let l = &self.local;
+        let show = match l.enabled {
+            LocalMode::Never => false,
+            LocalMode::Always => true,
+            LocalMode::Auto => virsh_found,
+        };
+        if !show {
+            return Vec::new();
+        }
+        let mut sys = HostConfig::new(LOCAL_SYSTEM, "localhost");
+        sys.local = true;
+        sys.libvirt_uri = l.libvirt_uri.clone();
+        sys.virsh_prefix = l.virsh_prefix.clone();
+        let mut out = vec![sys];
+        if l.session && l.libvirt_uri != SESSION_URI {
+            let mut ses = HostConfig::new(LOCAL_SESSION, "localhost");
+            ses.local = true;
+            ses.libvirt_uri = SESSION_URI.into();
+            out.push(ses);
+        }
+        out
+    }
+
     /// Check rules that serde cannot express (TC-024).
     pub fn validate(&self, path: &Path) -> Result<(), ConfigError> {
         let invalid = |message: String| ConfigError::Invalid {
@@ -241,6 +329,12 @@ impl Config {
         for (i, h) in self.hosts.iter().enumerate() {
             if h.name.trim().is_empty() {
                 return Err(invalid(format!("hosts[{i}]: name must not be empty")));
+            }
+            if h.name.starts_with('@') {
+                return Err(invalid(format!(
+                    "host \"{}\": names starting with '@' are reserved",
+                    h.name
+                )));
             }
             if h.host.trim().is_empty() {
                 return Err(invalid(format!(
@@ -268,6 +362,14 @@ impl Config {
             if !seen.insert(h.name.as_str()) {
                 return Err(invalid(format!("duplicate host name \"{}\"", h.name)));
             }
+        }
+        if self.local.libvirt_uri.trim().is_empty() {
+            return Err(invalid("local.libvirt_uri must not be empty".into()));
+        }
+        if let Some(prefix) = &self.local.virsh_prefix
+            && let Err(why) = check_virsh_prefix(prefix)
+        {
+            return Err(invalid(format!("local.virsh_prefix {why}")));
         }
         const LEVELS: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
         if !LEVELS.contains(&self.logging.level.to_ascii_lowercase().as_str()) {
@@ -557,6 +659,51 @@ virsh_prefix = "sudo -n"
             }
             other => panic!("expected invalid, got {other:?}"),
         }
+    }
+
+    // TC-110: [local] defaults, modes, reserved names.
+    #[test]
+    fn local_section() {
+        let (cfg, _) = Config::parse("", p()).unwrap();
+        assert_eq!(cfg.local, LocalConfig::default());
+        assert!(cfg.local_hosts(false).is_empty(), "auto without virsh");
+        let l = cfg.local_hosts(true);
+        assert_eq!(l.len(), 2);
+        assert!(l.iter().all(|h| h.local));
+        assert_eq!(
+            (l[0].name.as_str(), l[0].libvirt_uri.as_str()),
+            (LOCAL_SYSTEM, "qemu:///system")
+        );
+        assert_eq!(
+            (l[1].name.as_str(), l[1].libvirt_uri.as_str()),
+            (LOCAL_SESSION, SESSION_URI)
+        );
+        assert_eq!(l[0].display_name(), "localhost (system)");
+        assert_eq!(l[1].display_name(), "localhost (session)");
+
+        let text = "[local]\nenabled = \"always\"\nsession = false\nvirsh_prefix = \"sudo -n\"\n";
+        let (cfg, _) = Config::parse(text, p()).unwrap();
+        let l = cfg.local_hosts(false);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].virsh_prefix.as_deref(), Some("sudo -n"));
+        let (cfg, _) = Config::parse("[local]\nenabled = \"never\"\n", p()).unwrap();
+        assert!(cfg.local_hosts(true).is_empty());
+        // The session URI as main URI gives one entry.
+        let (cfg, _) = Config::parse("[local]\nlibvirt_uri = \"qemu:///session\"\n", p()).unwrap();
+        assert_eq!(cfg.local_hosts(true).len(), 1);
+
+        for bad in [
+            "[local]\nenabled = \"sometimes\"\n",
+            "[local]\nvirsh_prefix = \"a;b\"\n",
+            "[local]\nlibvirt_uri = \"\"\n",
+            "[[hosts]]\nname = \"@me\"\nhost = \"h\"\n",
+        ] {
+            assert!(Config::parse(bad, p()).is_err(), "{bad}");
+        }
+        // Local entries are never written to the file.
+        let mut cfg = Config::default();
+        cfg.hosts = cfg.local_hosts(true);
+        assert!(!cfg.to_toml().unwrap().contains("local = "));
     }
 
     // TC-031a

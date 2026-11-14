@@ -67,6 +67,12 @@ Unknown host keys and key passphrases are asked in a dialog. The SSH
 connection of each host stays open while the app runs, so later refreshes
 do not ask again.
 
+**This machine** needs no login: if `virsh` is on your `PATH`, the tree
+starts with "localhost (system)" (`qemu:///system`) and "localhost (session)"
+(your own VMs, `qemu:///session`). They are read with the same read-only
+virsh commands, run locally. Configure or hide them under `[local]`
+(`enabled = "auto" | "always" | "never"`, `session = true | false`).
+
 To refresh automatically at startup, set `refresh_on_start = true` under
 `[ui]` (see `examples/config.example.toml`). In the tree, Up/Down/Home/End
 move the selection and Enter refreshes the selected host.

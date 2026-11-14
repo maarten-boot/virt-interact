@@ -89,27 +89,28 @@ pub trait Connector: Send + Sync {
     ) -> BoxFuture<'a, Result<Arc<dyn CommandRunner>, BackendError>>;
 }
 
-/// Connects over SSH with the user's ssh config and known_hosts.
-pub struct SshConnector {
+/// The real connector: local entries (SPEC-020) run on this machine,
+/// every other host over SSH with the user's ssh config and known_hosts.
+pub struct HostConnector {
     pub known_hosts: PathBuf,
 }
 
-impl SshConnector {
-    pub fn new() -> SshConnector {
-        SshConnector {
+impl HostConnector {
+    pub fn new() -> HostConnector {
+        HostConnector {
             known_hosts: ConnectOptions::default_known_hosts()
                 .unwrap_or_else(|| PathBuf::from("known_hosts")),
         }
     }
 }
 
-impl Default for SshConnector {
+impl Default for HostConnector {
     fn default() -> Self {
-        SshConnector::new()
+        HostConnector::new()
     }
 }
 
-impl Connector for SshConnector {
+impl Connector for HostConnector {
     fn connect<'a>(
         &'a self,
         host: &'a HostConfig,
@@ -117,6 +118,12 @@ impl Connector for SshConnector {
         prompter: &'a dyn Prompter,
     ) -> BoxFuture<'a, Result<Arc<dyn CommandRunner>, BackendError>> {
         Box::pin(async move {
+            if host.local {
+                let r = vi_backend::local::LocalRunner::new(Duration::from_secs(
+                    ssh.command_timeout_secs.max(1),
+                ));
+                return Ok(Arc::new(r) as Arc<dyn CommandRunner>);
+            }
             let cfg = SshConfig::load_default().unwrap_or_default();
             let home = dirs::home_dir().unwrap_or_default();
             let user = vi_ssh::sshconfig::local_user().unwrap_or_else(|| "root".into());
@@ -572,5 +579,27 @@ mod tests {
         assert!(matches!(s["slow1"].last(), Some(HostStatus::Ok(_))));
         assert!(w.has_session("slow1"));
         assert_eq!(c.connects.load(Ordering::SeqCst), 3);
+    }
+
+    // TC-115: the real connector runs local entries on this machine, with
+    // no SSH (no prompts, no known_hosts).
+    #[cfg(unix)]
+    #[test]
+    fn local_entries_do_not_use_ssh() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let mut cfg = vi_core::config::Config::default();
+        cfg.local.enabled = vi_core::config::LocalMode::Always;
+        let local = cfg.local_hosts(false).remove(0);
+        let c = HostConnector {
+            known_hosts: PathBuf::from("/nonexistent/known_hosts"),
+        };
+        rt.block_on(async {
+            let r = c
+                .connect(&local, &SshSettings::default(), &NoPrompt)
+                .await
+                .expect("local runner");
+            let o = r.run("printf local").await.unwrap();
+            assert_eq!(o.stdout_text(), "local");
+        });
     }
 }

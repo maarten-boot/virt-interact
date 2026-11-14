@@ -35,3 +35,24 @@ Everything waits for the user's OK.
 **User:** Pushed.
 
 **Claude:** Run 43599218266: all four jobs pass. 113 tests on Linux, macOS and MSRV 1.92; 112 on Windows (the unix-only `sh` quoting test is skipped). TC-010 updated. Open: the manual GUI check against a real host (Plan 4.9) and TC-048 with `--prefix "sudo -n"`; then phase 5.
+
+## 3. Local host without login
+**User:** Noted that the local host does not need a login, and asked whether it can always be shown when QEMU is installed.
+
+**Claude:** Suggested a rewording and a correction: what matters is libvirt (`virsh`), not QEMU itself. Proposed:
+- a local entry that runs the same read-only virsh commands through the local shell, shown when `virsh` is on `PATH`;
+- a `[local]` config section (`enabled = auto|always|never`, `libvirt_uri`, `virsh_prefix`).
+
+Asked whether `qemu:///session` should be included too.
+
+**User:** Go ahead; include `qemu:///session` too.
+
+**Claude:** Implemented SPEC-020:
+- `[local]` config (with `session = true`); names starting with `@` are reserved.
+- `vi-backend/src/local.rs`: `LocalRunner` (`sh -c`, time limit) and `virsh` detection.
+- `HostConnector`: local entries run locally, others over SSH.
+- GUI: "localhost (system)" and "localhost (session)" first in the tree. They cannot be edited; their panel shows the connection as local; Settings shows where `virsh` was found.
+- Tests: TC-110 to TC-115, including an end-to-end inventory through a fake `virsh` that checks every call has `LC_ALL=C` and `-r`.
+- Checked under Xvfb with that fake `virsh` on `PATH`: detected, refreshed and details shown (TC-116).
+
+This machine has no libvirt, so the check against a real local libvirt is for the user.

@@ -5,6 +5,7 @@ pub mod command;
 pub mod domxml;
 pub mod error;
 pub mod libvirt;
+pub mod local;
 pub mod parse;
 
 use std::time::Duration;

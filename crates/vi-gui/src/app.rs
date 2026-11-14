@@ -19,7 +19,7 @@ use vi_ssh::Secret;
 use crate::prompts::{GuiPrompter, PromptKind, PromptRequest};
 use crate::theme;
 use crate::view::{self, Filter, StateColor, StateFilter};
-use crate::worker::{Event, HostStatus, SshConnector, Worker};
+use crate::worker::{Event, HostConnector, HostStatus, Worker};
 
 /// A message shown under the toolbar until dismissed.
 #[derive(Debug, Clone, PartialEq)]
@@ -200,6 +200,10 @@ pub struct App {
     started: bool,
     /// Scroll the tree to the selection (after keyboard navigation).
     scroll_to_selection: bool,
+    /// Where `virsh` was found locally (SPEC-020), if detection ran.
+    local_virsh: Option<PathBuf>,
+    /// The local entries currently shown (from `[local]`).
+    local_hosts: Vec<HostConfig>,
 }
 
 impl App {
@@ -229,7 +233,10 @@ impl App {
             open_prompt: None,
             started: false,
             scroll_to_selection: false,
+            local_virsh: None,
+            local_hosts: Vec::new(),
         };
+        app.local_hosts = app.store.config.local_hosts(false);
         app.sync_hosts();
         app
     }
@@ -253,8 +260,41 @@ impl App {
         let c1 = ctx.clone();
         let notify: Arc<dyn Fn() + Send + Sync> = Arc::new(move || c1.request_repaint());
         let prompter = Arc::new(GuiPrompter::new(ptx, notify.clone()));
-        let (worker, events) = Worker::new(Arc::new(SshConnector::new()), prompter, notify);
+        let (worker, events) = Worker::new(Arc::new(HostConnector::new()), prompter, notify);
         self.with_worker(worker, events, prx)
+    }
+
+    /// Look for `virsh` on `PATH` and show the local entries if `[local]`
+    /// says so (SPEC-020). Not done in `new`, so tests stay independent of
+    /// the machine they run on.
+    pub fn with_local_detection(mut self) -> App {
+        self.local_virsh = vi_backend::local::find_virsh();
+        self.update_local_hosts();
+        self
+    }
+
+    /// For tests: pretend `virsh` was (not) found.
+    pub fn set_local_virsh(&mut self, path: Option<PathBuf>) {
+        self.local_virsh = path;
+        self.update_local_hosts();
+    }
+
+    fn update_local_hosts(&mut self) {
+        self.local_hosts = self.store.config.local_hosts(self.local_virsh.is_some());
+        self.sync_hosts();
+    }
+
+    /// Local entries first, then the configured hosts.
+    pub fn all_hosts(&self) -> impl Iterator<Item = &HostConfig> {
+        self.local_hosts
+            .iter()
+            .chain(self.store.config.hosts.iter())
+    }
+
+    /// Display name of a host (`localhost (system)` for local entries).
+    pub fn display_name(&self, name: &str) -> String {
+        self.host_config(name)
+            .map_or_else(|| name.to_string(), HostConfig::display_name)
     }
 
     pub fn apply_theme(&self, ctx: &egui::Context) {
@@ -264,13 +304,7 @@ impl App {
     /// Make `hosts` match the config: add entries (from the cache if there
     /// is one), drop entries of removed hosts.
     fn sync_hosts(&mut self) {
-        let names: Vec<String> = self
-            .store
-            .config
-            .hosts
-            .iter()
-            .map(|h| h.name.clone())
-            .collect();
+        let names: Vec<String> = self.all_hosts().map(|h| h.name.clone()).collect();
         self.hosts.retain(|k, _| names.contains(k));
         for n in names {
             if !self.hosts.contains_key(&n) {
@@ -296,7 +330,7 @@ impl App {
     }
 
     fn host_config(&self, name: &str) -> Option<&HostConfig> {
-        self.store.config.hosts.iter().find(|h| h.name == name)
+        self.all_hosts().find(|h| h.name == name)
     }
 
     // ---- actions -------------------------------------------------------
@@ -328,13 +362,7 @@ impl App {
     }
 
     pub fn refresh_all(&mut self) {
-        let names: Vec<String> = self
-            .store
-            .config
-            .hosts
-            .iter()
-            .map(|h| h.name.clone())
-            .collect();
+        let names: Vec<String> = self.all_hosts().map(|h| h.name.clone()).collect();
         for n in names {
             self.refresh(&n);
         }
@@ -540,6 +568,7 @@ impl App {
             self.custom_ratio = r;
         }
         self.apply_theme(ctx);
+        self.local_hosts = self.store.config.local_hosts(self.local_virsh.is_some());
         self.sync_hosts();
         self.messages.push(Message::info(format!(
             "Config reloaded: {} host(s).",
@@ -597,7 +626,7 @@ impl App {
     /// filter if the host is expanded (`is_open`).
     pub fn visible_items(&self, is_open: impl Fn(&str) -> bool) -> Vec<Selection> {
         let mut out = Vec::new();
-        for h in &self.store.config.hosts {
+        for h in self.all_hosts() {
             out.push(Selection::Host(h.name.clone()));
             if !is_open(&h.name) {
                 continue;
@@ -739,7 +768,7 @@ impl App {
                 self.refresh(h);
             }
             if self
-                .button(ui, !self.store.config.hosts.is_empty(), "Refresh all")
+                .button(ui, self.all_hosts().next().is_some(), "Refresh all")
                 .clicked()
             {
                 self.refresh_all();
@@ -799,31 +828,26 @@ impl App {
     }
 
     fn tree(&mut self, ui: &mut egui::Ui) {
-        if self.store.config.hosts.is_empty() {
+        if self.all_hosts().next().is_none() {
             ui.label("No hosts configured.");
             if ui.button("Add host…").clicked() {
                 self.host_form = Some(HostForm::new_host());
             }
             return;
         }
-        let hosts: Vec<String> = self
-            .store
-            .config
-            .hosts
-            .iter()
-            .map(|h| h.name.clone())
-            .collect();
+        let hosts: Vec<String> = self.all_hosts().map(|h| h.name.clone()).collect();
         let mut new_sel = None;
         for name in hosts {
             let Some(entry) = self.hosts.get(&name) else {
                 continue;
             };
             let id = tree_id(&name);
+            let label = self.display_name(&name);
             let status = self.status_text(&entry.status);
             let selected = self.selection == Selection::Host(name.clone());
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
                 .show_header(ui, |ui| {
-                    let r = ui.selectable_label(selected, RichText::new(&name).strong());
+                    let r = ui.selectable_label(selected, RichText::new(&label).strong());
                     if selected && self.scroll_to_selection {
                         r.scroll_to_me(None);
                     }
@@ -892,7 +916,7 @@ impl App {
         match self.selection.clone() {
             Selection::None => {
                 ui.heading("Select a host or a VM");
-                ui.label("Hosts are listed on the left. Use Refresh to read their VMs over SSH.");
+                ui.label("Hosts are listed on the left. Use Refresh to read their VMs (over SSH, or directly for localhost).");
             }
             Selection::Host(h) => self.host_details(ui, &h),
             Selection::Domain(h, d) => self.domain_details(ui, &h, &d),
@@ -906,7 +930,7 @@ impl App {
         ) else {
             return;
         };
-        ui.heading(&cfg.name);
+        ui.heading(cfg.display_name());
         ui.horizontal(|ui| {
             if self
                 .button(ui, !entry.status.busy(), "Refresh")
@@ -915,19 +939,45 @@ impl App {
             {
                 self.refresh(name);
             }
-            if ui.button("Edit…").clicked() {
-                self.host_form = Some(HostForm::edit(&cfg));
-            }
-            if ui.button("Remove…").clicked() {
-                self.confirm_remove = Some(name.to_string());
+            // Local entries come from [local] in the config file (SPEC-020).
+            if !cfg.local {
+                if ui.button("Edit…").clicked() {
+                    self.host_form = Some(HostForm::edit(&cfg));
+                }
+                if ui.button("Remove…").clicked() {
+                    self.confirm_remove = Some(name.to_string());
+                }
             }
         });
+        if cfg.local {
+            ui.label(
+                RichText::new(
+                    "This machine, read without SSH. Set it up under [local] in the config file \
+                     (enabled = \"auto\" | \"always\" | \"never\").",
+                )
+                .color(theme::c(self.palette.weak_text)),
+            );
+        }
         ui.add_space(6.0);
         let none = "default";
         egui::Grid::new("host-grid")
             .num_columns(2)
             .striped(true)
             .show(ui, |ui| {
+                if cfg.local {
+                    row(ui, "Connection", "local (no SSH)");
+                    row(ui, "libvirt URI", cfg.libvirt_uri.clone());
+                    row(
+                        ui,
+                        "virsh prefix",
+                        cfg.virsh_prefix.clone().unwrap_or_else(|| "none".into()),
+                    );
+                    row(ui, "Status", self.status_text(&entry.status));
+                    if let Some(s) = &entry.shown {
+                        inventory_rows(ui, s);
+                    }
+                    return;
+                }
                 row(ui, "Host", cfg.host.clone());
                 row(
                     ui,
@@ -950,33 +1000,7 @@ impl App {
                 );
                 row(ui, "Status", self.status_text(&entry.status));
                 if let Some(s) = &entry.shown {
-                    row(
-                        ui,
-                        "libvirt",
-                        s.inventory
-                            .library
-                            .clone()
-                            .unwrap_or_else(|| "unknown".into()),
-                    );
-                    row(
-                        ui,
-                        "Hypervisor",
-                        s.inventory
-                            .hypervisor
-                            .clone()
-                            .unwrap_or_else(|| "unknown".into()),
-                    );
-                    row(ui, "VMs", s.inventory.domains.len().to_string());
-                    row(
-                        ui,
-                        "Inventory",
-                        format!(
-                            "{}, taken {} ({})",
-                            if s.cached { "cached" } else { "live" },
-                            format_utc(s.taken_at),
-                            format_age(s.taken_at, now_secs())
-                        ),
-                    );
+                    inventory_rows(ui, s);
                 }
             });
         if let HostStatus::Error(e) = &entry.status {
@@ -1013,7 +1037,7 @@ impl App {
                 ui.label(RichText::new("(cached)").color(theme::c(self.palette.weak_text)));
             }
         });
-        ui.label(format!("on {host}"));
+        ui.label(format!("on {}", self.display_name(host)));
         if let Some(e) = &d.error {
             ui.label(RichText::new(e).color(theme::c(self.palette.state_error)));
         }
@@ -1180,7 +1204,7 @@ impl App {
                             ));
                             ui.label(gr.tls_port.map_or_else(|| "-".into(), |p| p.to_string()));
                             ui.label(if gr.reachable() {
-                                "reachable via tunnel (v1.1)"
+                                "reachable (console in v1.1)"
                             } else {
                                 "not reachable remotely"
                             });
@@ -1287,6 +1311,22 @@ impl App {
                         self.store.config.ssh.connect_timeout_secs,
                         self.store.config.ssh.command_timeout_secs
                     ));
+                    ui.end_row();
+                    ui.label("Local libvirt");
+                    ui.add(
+                        egui::Label::new(match &self.local_virsh {
+                            Some(p) => format!(
+                                "virsh found at {}; [local] enabled = {:?}",
+                                p.display(),
+                                self.store.config.local.enabled
+                            ),
+                            None => format!(
+                                "virsh not found on PATH; [local] enabled = {:?}",
+                                self.store.config.local.enabled
+                            ),
+                        })
+                        .wrap(),
+                    );
                     ui.end_row();
                     ui.label("Cache");
                     ui.add(
@@ -1490,6 +1530,32 @@ fn tree_id(host: &str) -> egui::Id {
 /// Text colour of a button: normal, or the palette's disabled colour.
 pub fn button_color(p: &Palette, enabled: bool) -> Color32 {
     theme::c(if enabled { p.text } else { p.disabled_text })
+}
+
+/// Grid rows about a host's inventory: versions, VM count, live/cached.
+fn inventory_rows(ui: &mut egui::Ui, s: &Shown) {
+    let inv = &s.inventory;
+    row(
+        ui,
+        "libvirt",
+        inv.library.clone().unwrap_or_else(|| "unknown".into()),
+    );
+    row(
+        ui,
+        "Hypervisor",
+        inv.hypervisor.clone().unwrap_or_else(|| "unknown".into()),
+    );
+    row(ui, "VMs", inv.domains.len().to_string());
+    row(
+        ui,
+        "Inventory",
+        format!(
+            "{}, taken {} ({})",
+            if s.cached { "cached" } else { "live" },
+            format_utc(s.taken_at),
+            format_age(s.taken_at, now_secs())
+        ),
+    );
 }
 
 /// One label/value row of a two-column grid.

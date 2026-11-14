@@ -59,7 +59,9 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             let cache = paths::cache_dir().map(Cache::new);
-            let app = App::new(store, messages, cache).with_ssh(&cc.egui_ctx);
+            let app = App::new(store, messages, cache)
+                .with_local_detection()
+                .with_ssh(&cc.egui_ctx);
             app.apply_theme(&cc.egui_ctx);
             Ok(Box::new(app))
         }),

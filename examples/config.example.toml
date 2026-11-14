@@ -27,6 +27,14 @@ command_timeout_secs = 30   # default 30
 # other libraries log at warn. RUST_LOG overrides this.
 level = "info"
 
+[local]
+# This machine, read without SSH (SPEC-020). "auto" (default): shown when
+# virsh is found on PATH; "always"; "never".
+enabled = "auto"
+libvirt_uri = "qemu:///system"  # the "localhost (system)" entry
+# virsh_prefix = "sudo -n"      # optional, for the system entry
+session = true                  # also show "localhost (session)": your own VMs
+
 # One [[hosts]] block per remote host. Only name and host are required.
 
 [[hosts]]

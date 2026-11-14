@@ -497,3 +497,64 @@ async fn uuid_falls_back_to_xml() {
         Some("00000000-0000-4000-8000-00000000000a")
     );
 }
+
+// TC-113: the local host end to end. A fake `virsh` on PATH answers from a
+// fixture set; the backend runs through the local shell exactly as over SSH
+// (`LC_ALL=C`, read-only `-r`, quoted arguments).
+#[cfg(unix)]
+#[tokio::test]
+async fn local_inventory_through_fake_virsh() {
+    use std::os::unix::fs::PermissionsExt;
+    use vi_backend::local::LocalRunner;
+
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let log = dir.path().join("calls.log");
+    let set = fixtures().join("libvirt-10.0.0");
+    let script = format!(
+        r#"#!/bin/sh
+echo "LC_ALL=$LC_ALL $*" >> '{log}'
+[ "$1" = "-r" ] || {{ echo "error: not read-only" >&2; exit 9; }}
+shift 3
+D='{set}'
+case "$1" in
+  version) cat "$D/version.txt" ;;
+  list) cat "$D/list-all.txt" ;;
+  dominfo) cat "$D/$2/dominfo.txt" ;;
+  dumpxml) cat "$D/$2/dumpxml.xml" ;;
+  domblkinfo) cat "$D/$2/domblkinfo-$3.txt" 2>/dev/null || {{ echo "error: no such disk" >&2; exit 1; }} ;;
+  *) echo "error: unexpected $1" >&2; exit 2 ;;
+esac
+"#,
+        log = log.display(),
+        set = set.display()
+    );
+    let virsh = bin.join("virsh");
+    fs::write(&virsh, script).unwrap();
+    fs::set_permissions(&virsh, fs::Permissions::from_mode(0o755)).unwrap();
+
+    // `sh`, `cat` and `echo` still come from the normal PATH, after the fake.
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let runner = LocalRunner::new(Duration::from_secs(10)).with_path(path);
+    let b = LibvirtBackend::new("qemu:///session", None).unwrap();
+    let inv = b.inventory(&runner).await.expect("inventory");
+    assert_eq!(inv.library.as_deref(), Some("libvirt 10.0.0"));
+    assert_eq!(inv.domains.len(), 3);
+    assert!(inv.domains.iter().all(|d| d.details.is_some()));
+    let j = inv.domains.iter().find(|d| d.name == "vm-j2sunl").unwrap();
+    assert!(j.details.as_ref().unwrap().disks[0].size.is_some());
+
+    let calls = fs::read_to_string(&log).unwrap();
+    for line in calls.lines() {
+        assert!(
+            line.starts_with("LC_ALL=C -r -c qemu:///session "),
+            "{line}"
+        );
+    }
+    assert!(calls.contains("dumpxml vm-j2sunl"));
+}

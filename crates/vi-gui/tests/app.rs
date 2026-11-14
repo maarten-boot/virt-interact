@@ -426,3 +426,51 @@ fn refresh_on_start() {
         assert_eq!(idle, !on, "refresh_on_start = {on}");
     }
 }
+
+// TC-114: local entries (SPEC-020) appear first when `virsh` is found
+// ("auto"), always with "always", never with "never"; they are not
+// editable and render headless.
+#[test]
+fn local_entries() {
+    use vi_core::config::{LOCAL_SESSION, LOCAL_SYSTEM, LocalMode};
+    let dir = tempfile::tempdir().unwrap();
+    let (store, cache) = setup(dir.path());
+    let path = store.path.clone();
+    let mut app = App::new(store, vec![], Some(cache));
+    assert!(
+        !app.hosts.contains_key(LOCAL_SYSTEM),
+        "auto, virsh not detected"
+    );
+
+    app.set_local_virsh(Some("/usr/bin/virsh".into()));
+    let first: Vec<_> = app.all_hosts().map(|h| h.name.clone()).collect();
+    assert_eq!(first, [LOCAL_SYSTEM, LOCAL_SESSION, "lab", "edge"]);
+    assert_eq!(app.display_name(LOCAL_SYSTEM), "localhost (system)");
+    assert_eq!(app.display_name(LOCAL_SESSION), "localhost (session)");
+    assert!(app.hosts.contains_key(LOCAL_SESSION));
+
+    let ctx = egui::Context::default();
+    for name in [LOCAL_SYSTEM, LOCAL_SESSION] {
+        app.selection = Selection::Host(name.into());
+        frame(&mut app, &ctx);
+    }
+    // Saving the config never writes the local entries.
+    app.set_contrast(&ctx, ContrastLevel::Aaa);
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(!text.contains("@local"), "{text}");
+
+    // "never" hides them even with virsh; "always" shows them without.
+    app.store.config.local.enabled = LocalMode::Never;
+    app.set_local_virsh(Some("/usr/bin/virsh".into()));
+    assert!(!app.hosts.contains_key(LOCAL_SYSTEM));
+    assert_eq!(
+        app.selection,
+        Selection::None,
+        "selection of a vanished entry cleared"
+    );
+    app.store.config.local.enabled = LocalMode::Always;
+    app.store.config.local.session = false;
+    app.set_local_virsh(None);
+    assert!(app.hosts.contains_key(LOCAL_SYSTEM));
+    assert!(!app.hosts.contains_key(LOCAL_SESSION));
+}

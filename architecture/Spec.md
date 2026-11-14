@@ -42,6 +42,7 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
   - `-h`/`--help` prints usage; `-V`/`--version` prints the version;
   - an unknown argument prints usage and exits with code 2.
 - `[ui]` keys: `contrast` (SPEC-001) and `refresh_on_start` (bool, default `false`; SPEC-012).
+- `[local]` keys: `enabled`, `libvirt_uri`, `virsh_prefix`, `session` (SPEC-020).
 - If the file is missing, the app starts with defaults and creates the file the first time it saves.
 - An invalid file gives a clear error message with the line number. Unknown keys count as invalid, so typing mistakes are caught. The app does not overwrite an invalid file: it starts with defaults and does not save changes until the file is fixed.
 
@@ -60,8 +61,21 @@ Each host has these fields:
 | `virsh_prefix` | no | none | Command prefix, e.g. `"sudo -n"`; plain characters only (SPEC-011) |
 
 - Hosts can be added, edited and removed in the GUI. Changes are saved to the config file.
-- Host names must be unique and not empty; `host` must not be empty.
+- Host names must be unique and not empty; `host` must not be empty. Names starting with `@` are reserved for the local entries (SPEC-020).
 - The GUI and the file stay consistent: a host added in the file appears after a reload.
+
+### SPEC-020: Local host without login (v1)
+- The local machine's libvirt can be shown without SSH: no login, no host key, no passphrase.
+- Two entries, shown first in the tree:
+  - "localhost (system)": `[local] libvirt_uri`, default `qemu:///system`, with the optional `[local] virsh_prefix`;
+  - "localhost (session)": `qemu:///session`, the user's own VMs (as used by GNOME Boxes, and by libvirt on macOS). Shown when `[local] session = true` (the default) and the system URI is not already the session URI. Reading it may start the user's session libvirt daemon, as any `virsh -c qemu:///session` does.
+- `[local] enabled`:
+  - `"auto"` (default): shown when `virsh` is found on `PATH`;
+  - `"always"`: always shown (an error explains a missing `virsh`);
+  - `"never"`: hidden.
+- The same allowlisted, read-only command lines as for remote hosts (SPEC-011: `LC_ALL=C`, `virsh -r`, quoting) run through the local POSIX shell (`sh -c`), with the `[ssh] command_timeout_secs` limit. Platforms without a POSIX shell (Windows) do not show local entries in `"auto"` mode.
+- Local entries are not stored in `[[hosts]]` and cannot be edited or removed in the GUI. They are configured only through `[local]`. Refresh, status, cache, filter and keyboard work as for other hosts.
+- v1.1 (SPEC-018): the console of a local VM is opened directly, without a tunnel.
 
 ## 4. SSH
 
@@ -184,8 +198,8 @@ Scope of an error:
 ## 7. Architecture
 
 ### SPEC-017: Backend abstraction (v1 design, later implementations)
-- Inventory access goes through a backend trait (for example, `HypervisorBackend`). v1 has one implementation: `libvirt` (virsh over SSH).
-- Remote command execution goes through a trait, so backends can be tested without a real host.
+- Inventory access goes through a backend trait (for example, `HypervisorBackend`). v1 has one implementation: `libvirt` (virsh over SSH, or locally for SPEC-020).
+- Command execution goes through a trait (`CommandRunner`): an SSH session, a local shell runner (SPEC-020), or a mock for tests.
 - Other backends (for example Proxmox or Hyper-V) can be added later without changing the GUI.
 
 ## 8. Remote viewing
