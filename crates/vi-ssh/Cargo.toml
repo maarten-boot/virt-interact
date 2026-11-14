@@ -4,6 +4,7 @@ description = "virt-interact SSH: sessions, auth, known_hosts, command runner, t
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 repository.workspace = true
 publish = false
 

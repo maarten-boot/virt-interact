@@ -106,3 +106,19 @@ Open: there is no LICENSE file yet. That is the user's choice; the package scrip
 **User:** Pushed.
 
 **Claude:** Run 43624762252 passed: 124 tests on Linux, macOS and MSRV; 117 on Windows. All three archives were built and passed their content checks; the macOS binary holds x86_64 and arm64, and its signature verifies. TC-010 and TC-120 updated. Still open: a licence (the user's choice), a crosscheck, then Plan 5.2.
+
+## 7. Crosscheck 03 and the licence
+**User:** Do a crosscheck. During it: "MIT is fine."
+
+**Claude:** Added the MIT licence: a `LICENSE` file, `license = "MIT"` for every crate, `LICENSE` in every archive (checked by `package.sh`), and a README section. Saved `architecture/Crosscheck-2026-11-14-03.md`. Checks are clean: fmt, clippy, 124 tests, CI runs 43624762252 and 43627704022.
+
+Findings:
+- C1: Windows release builds show no `--help`/`--version` output or start-up errors.
+- C2: the archives lack third-party licence notices. The dependencies include BSD, ISC, Unicode, Zlib, the OFL and Ubuntu font licences, and MPL-2.0; none is GPL-only. Proposed: `cargo-about`.
+- C3: the CI Linux archive is built on a newer distribution than the release.
+- S1–S3: Spec and Plan wording.
+- T1: TC-010 wording.
+- T2: try `release.yml` via "Run workflow" before tagging.
+- Improvement: an app icon.
+
+Everything waits for the user's OK.

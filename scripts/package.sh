@@ -35,9 +35,7 @@ docs() {
     mkdir -p "$d/examples"
     cp "$root/README.md" "$root/Changes.md" "$d/"
     cp "$root/examples/config.example.toml" "$root/examples/ssh_config.example" "$d/examples/"
-    for f in "$root"/LICENSE*; do
-        if [ -e "$f" ]; then cp "$f" "$d/"; fi
-    done
+    cp "$root/LICENSE" "$d/"
 }
 
 sha256() {
@@ -55,7 +53,7 @@ linux)
     # No local user/group names in the archive (GNU tar); stable order.
     tar --owner=0 --group=0 --numeric-owner --sort=name -czf "$archive" -C "$work" "$name"
     listing=$(tar -tzf "$archive")
-    expect=("$name/virt-interact" "$name/README.md" "$name/examples/config.example.toml")
+    expect=("$name/virt-interact" "$name/README.md" "$name/LICENSE" "$name/examples/config.example.toml")
     ;;
 windows)
     build
@@ -72,7 +70,7 @@ windows)
         (cd "$work" && zip -qr "$archive" "$name")
         listing=$(unzip -l "$archive")
     fi
-    expect=("$name/virt-interact.exe" "$name/README.md" "$name/examples/config.example.toml")
+    expect=("$name/virt-interact.exe" "$name/README.md" "$name/LICENSE" "$name/examples/config.example.toml")
     ;;
 macos)
     export MACOSX_DEPLOYMENT_TARGET=12.0
@@ -95,7 +93,7 @@ macos)
     ditto -c -k --keepParent "$stage" "$archive"
     listing=$(unzip -l "$archive")
     expect=("$name/virt-interact.app/Contents/MacOS/virt-interact"
-            "$name/virt-interact.app/Contents/Info.plist" "$name/README.md"
+            "$name/virt-interact.app/Contents/Info.plist" "$name/README.md" "$name/LICENSE"
             "$name/examples/config.example.toml")
     ;;
 *)

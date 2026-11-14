@@ -150,3 +150,7 @@ committing (see `tests/fixtures/README.md`).
 | `tests/fixtures` | anonymised virsh output for parser tests |
 | `architecture/` | Spec, Plan, TestCases, conversation logs, crosschecks |
 | `Changes.md` | changes between releases |
+
+## Licence
+
+MIT; see [`LICENSE`](LICENSE).
