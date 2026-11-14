@@ -30,3 +30,8 @@ Everything waits for the user's OK.
 - Improvement 3: keyboard navigation. Its test found an integer overflow on Home/End, which was fixed.
 
 113 tests pass; fmt and clippy are clean.
+
+## 2. CI for the crosscheck fixes
+**User:** Pushed.
+
+**Claude:** Run 43599218266: all four jobs pass. 113 tests on Linux, macOS and MSRV 1.92; 112 on Windows (the unix-only `sh` quoting test is skipped). TC-010 updated. Open: the manual GUI check against a real host (Plan 4.9) and TC-048 with `--prefix "sudo -n"`; then phase 5.
