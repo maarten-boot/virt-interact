@@ -13,3 +13,8 @@ Findings waiting for the user's OK:
 **User:** Yes, apply R1 and R2.
 
 **Claude:** Added `## Unreleased` on top of `Changes.md` and dated the 1.0.0 release 2026-11-16. Checked `release_notes.sh 1.0.0`. Committed.
+
+## 3. Tag v1.0.0
+**User:** Pushed `main`, then the tag `v1.0.0`.
+
+**Claude:** CI run 43837860224 (`9fdc0da`) passed on all 4 jobs (127 tests; Windows 120) and built archives named 1.0.0. Release run 43839695459 passed: it packaged all three platforms and created the draft release (not yet published). The local token cannot read draft releases; the release job's log shows the `gh release create --draft` call and the draft's URL. TC-120 updated. Open: TC-121 (the archives on each platform), then the user publishes.
