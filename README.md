@@ -148,8 +148,8 @@ committing (see `tests/fixtures/README.md`).
 | `crates/vi-backend` | hypervisor backends (libvirt via virsh), local runner for this machine |
 | `crates/vi-gui` | the GUI as a library (app, background worker, SSH prompts, view logic, theme) plus the thin `virt-interact` binary |
 | `examples/` | example config and ssh config (kept valid by unit tests) |
-| `scripts/` | `package.sh` (release archive per platform), `release_notes.sh`, `make_icon.py` (draws the app icon), `anonymise_fixtures.py` (new virsh captures) |
-| `packaging/` | app icon (PNG, ICO, ICNS), macOS `Info.plist`, Linux `.desktop` file |
+| `scripts/` | `package.sh` (release archive per platform), `release_notes.sh`, `make_icon.py` (app icons from the logo), `anonymise_fixtures.py` (new virsh captures) |
+| `packaging/` | logo and app icons (PNG, ICO, ICNS), macOS `Info.plist`, Linux `.desktop` file |
 | `about.toml`, `about.hbs` | accepted third-party licences and the notices template (`cargo-about`, needed by `package.sh`) |
 | `tests/fixtures` | anonymised virsh output for parser tests |
 | `architecture/` | Spec, Plan, TestCases, conversation logs, crosschecks |

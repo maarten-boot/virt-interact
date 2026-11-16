@@ -31,7 +31,7 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
   - macOS: `virt-interact-<ver>-macos-universal.zip` with `virt-interact.app` (arm64 + x86_64, macOS 12+), ad-hoc signed but not notarized: the first start needs "Open Anyway" in System Settings → Privacy & Security.
   - Installers (MSI, AppImage/deb) and notarization are later work.
 - **Licence:** virt-interact is MIT licensed. Every archive holds `LICENSE` and `THIRD_PARTY_LICENSES.html` with the licence texts of all bundled crates (all platforms). Only licences listed in `about.toml` are accepted; packaging fails on any other, so a new licence is reviewed before it is shipped. For a crate under "A OR B" the first accepted licence applies; no GPL-only code is included.
-- **Icon:** the app has its own icon: the window icon (all platforms), embedded in the Windows `.exe`, in the macOS app bundle, and with a `.desktop` file in the Linux archive (the window's app id is `virt-interact`).
+- **Icon:** the app has its own icon, the project logo (a blue "V" on a green rounded square; master `packaging/icon/logo.png`): the window icon (all platforms), embedded in the Windows `.exe`, in the macOS app bundle, and with a `.desktop` file in the Linux archive (the window's app id is `virt-interact`).
 
 ### SPEC-003: GUI toolkit (v1)
 - The GUI uses `egui`/`eframe`.

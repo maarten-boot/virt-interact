@@ -94,6 +94,7 @@ about.toml       accepted third-party licences (cargo-about; about.hbs is the no
   - [ ] the user runs `release.yml` via "Run workflow" (optional), pushes tag `v1.0.0`, tries the draft release's archives on each platform (TC-121) and publishes it.
 
 ### Phase 6: v1.1 remote viewing (SPEC-018)
+- [x] 6.0 New app icon from the user's logo (a blue "V" on a green rounded square): master `packaging/icon/logo.png`, all sizes made by `scripts/make_icon.py` (2026-11-16).
 - [ ] 6.1 Local listener and `direct-tcpip` / `direct-streamlocal` forwarding.
 - [ ] 6.2 Viewer launch, configurable path, tunnel lifetime tied to the viewer process.
 - [ ] 6.3 Check that `remote-viewer` is available on each platform and document how to install it.

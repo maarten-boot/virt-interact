@@ -18,3 +18,8 @@ Findings waiting for the user's OK:
 **User:** Pushed `main`, then the tag `v1.0.0`.
 
 **Claude:** CI run 43837860224 (`9fdc0da`) passed on all 4 jobs (127 tests; Windows 120) and built archives named 1.0.0. Release run 43839695459 passed: it packaged all three platforms and created the draft release (not yet published). The local token cannot read draft releases; the release job's log shows the `gh release create --draft` call and the draft's URL. TC-120 updated. Open: TC-121 (the archives on each platform), then the user publishes.
+
+## 4. Logo for the next release; TC-121
+**User:** A logo is in `tmp/` for the next release; go ahead. Tested 1.0.0 on Linux: OK; no Mac; Windows works (after adding the SSH identity).
+
+**Claude:** `scripts/make_icon.py --source <picture>` now cuts the green rounded square out of the supplied picture, removes the JPEG noise (each pixel snapped between the two logo colours, edges kept smooth), makes the corners transparent and saves the master `packaging/icon/logo.png` (1024 px). All icons (512/256 PNG, ICO, ICNS) are made from the master. A preview of 16–128 px on light and dark backgrounds was checked: the "V" stays readable. The supplied JPEG itself stays in `tmp/` (not committed). Plan 6.0, Changes (Unreleased), Spec, TC-121, TC-122 and README updated. 1.0.0 is not published yet.

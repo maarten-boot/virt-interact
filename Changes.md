@@ -4,7 +4,9 @@ Changes between releases. Newest on top.
 
 ## Unreleased
 
-Nothing yet.
+**Interface**
+- New app icon: a blue "V" on a green rounded square (window, Windows
+  program, macOS app, Linux menu entry).
 
 ## 1.0.0 (2026-11-16)
 
