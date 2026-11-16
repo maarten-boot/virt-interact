@@ -23,3 +23,8 @@ Findings waiting for the user's OK:
 **User:** A logo is in `tmp/` for the next release; go ahead. Tested 1.0.0 on Linux: OK; no Mac; Windows works (after adding the SSH identity).
 
 **Claude:** `scripts/make_icon.py --source <picture>` now cuts the green rounded square out of the supplied picture, removes the JPEG noise (each pixel snapped between the two logo colours, edges kept smooth), makes the corners transparent and saves the master `packaging/icon/logo.png` (1024 px). All icons (512/256 PNG, ICO, ICNS) are made from the master. A preview of 16–128 px on light and dark backgrounds was checked: the "V" stays readable. The supplied JPEG itself stays in `tmp/` (not committed). Plan 6.0, Changes (Unreleased), Spec, TC-121, TC-122 and README updated. 1.0.0 is not published yet.
+
+## 5. Windows test setup; CI for the icon
+**User:** "Adding the SSH id" meant: the Windows test machine had no key yet, so a test key was made and copied to the host with `ssh-copy-id`.
+
+**Claude:** That is setup, not an app issue; no change needed. TC-121 note clarified. CI run 43894012945 (`23f19d6`, new icon) passed on all 4 jobs. 1.0.0 is not yet visible as published.
