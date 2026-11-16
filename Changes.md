@@ -2,7 +2,61 @@
 
 Changes between releases. Newest on top.
 
-## Unreleased
+## 1.0.0 (2026-11-14)
+
+First release: a desktop app for Windows, Linux and macOS that shows a
+**read-only inventory of libvirt virtual machines** on your hosts, over SSH.
+
+**Inventory**
+- Every VM per host, running or stopped, with its state as text and colour.
+- Per VM: general info (UUID, firmware BIOS/UEFI, guest OS, architecture,
+  autostart, persistent), CPU and
+  memory, disks with their size, network interfaces, graphics, and the other
+  devices grouped; the raw XML can be viewed and copied.
+- Only read-only commands run on a host (`virsh -r`, a fixed allowlist);
+  nothing is ever changed.
+- Up to 4 VMs per host are read in parallel. A VM that fails or times out
+  is marked; the rest of the host still shows.
+- The last inventory of each host is cached and shown, marked "cached", when
+  the app starts or a host is unreachable.
+
+**Hosts and SSH**
+- Key-based SSH only: ssh-agent (also the Windows OpenSSH agent and
+  Pageant) and key files, with a passphrase dialog. Passwords are never used.
+- `~/.ssh/config` (`Host` patterns, `HostName`, `Port`, `User`,
+  `IdentityFile`) and `known_hosts` are respected; unknown host keys are asked in a dialog, and a
+  changed key is refused.
+- Hosts are added, edited and removed in the app or in the TOML config;
+  `virsh_prefix` (e.g. `sudo -n`) for users outside the `libvirt` group.
+- This machine is shown without login when `virsh` is installed:
+  "localhost (system)" and "localhost (session)".
+
+**Interface**
+- White background, black text; every colour pair meets WCAG AA (4.5:1),
+  with AAA, Max (pure black/white) and a custom minimum in Settings or the
+  config file.
+- Filter by name and state; keyboard navigation in the tree.
+- Hovering and pressing change only colours; nothing moves. The tree width
+  and window size are remembered.
+
+**Downloads**
+- Linux x86_64 (tar.gz, glibc 2.35 or newer, with a `.desktop` file),
+  Windows x86_64 (zip), macOS 12+ for Apple Silicon and Intel (app in a zip).
+- Each archive has a `.sha256` file and holds `LICENSE` (MIT) and the
+  licences of all bundled libraries.
+
+**Known limitations**
+- Read-only inventory only. VNC/SPICE consoles over SSH follow in 1.1.
+- libvirt (`virsh`) is the only backend.
+- The macOS app is not notarized: allow it once in System Settings →
+  Privacy & Security → "Open Anyway". The Windows program is not signed, so
+  SmartScreen may warn on first start.
+- No installers yet (MSI, AppImage/deb).
+
+## Development before 1.0.0
+
+The steps that led to 1.0.0, in order (details in `architecture/`):
+
 - Project setup: git repo, `architecture/` docs (Spec, Plan, TestCases, conversation log), working rules in `CLAUDE.md`.
 - Spec, Plan and TestCases for v1 (read-only inventory) and v1.1 (remote viewing).
 - Phase 0: Cargo workspace (`vi-core`, `vi-ssh`, `vi-backend`, `vi-gui`), empty white/black GUI window, CI for Windows/Linux/macOS, README.
