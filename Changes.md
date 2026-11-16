@@ -2,7 +2,11 @@
 
 Changes between releases. Newest on top.
 
-## 1.0.0 (2026-11-14)
+## Unreleased
+
+Nothing yet.
+
+## 1.0.0 (2026-11-16)
 
 First release: a desktop app for Windows, Linux and macOS that shows a
 **read-only inventory of libvirt virtual machines** on your hosts, over SSH.

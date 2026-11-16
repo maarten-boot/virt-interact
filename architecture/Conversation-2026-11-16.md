@@ -8,3 +8,8 @@
 Findings waiting for the user's OK:
 - R1: `Changes.md` lost its "Unreleased" section (the project CLAUDE.md asks for one).
 - R2: the release date in `## 1.0.0 (2026-11-14)` should be the tag date.
+
+## 2. R1 and R2
+**User:** Yes, apply R1 and R2.
+
+**Claude:** Added `## Unreleased` on top of `Changes.md` and dated the 1.0.0 release 2026-11-16. Checked `release_notes.sh 1.0.0`. Committed.
