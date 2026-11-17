@@ -40,3 +40,12 @@
 - macOS: Homebrew has **no** `virt-viewer` formula (`formulae.brew.sh` 404) — the README/hint from 6.2 ("brew install virt-viewer") was wrong. The `remoteviewer` cask is version 0.5.7 (SPICE only, old). MacPorts has `virt-viewer` 11.0 in `/opt/local/bin`, which was not on the search path: added to `EXTRA_DIRS` (also for `virsh`).
 - Windows: virt-viewer 11.0 (2021-11-18, still the latest) as MSI from gitlab.com/virt-viewer (linked from virt-manager.org), also winget `RedHat.VirtViewer` 11.0.256 (manifest with SHA256).
 Added `examples/console-check.rs` (find the viewer and run `--version`; or open a console of this machine through the tunnel and pass if the viewer stays connected; tried with stand-ins: pass and both fail cases) and `.github/workflows/viewer-check.yml` (by hand: Linux apt + TigerVNC real console; macOS MacPorts via setup-macports pinned to the v1.1.6 commit; Windows MSI with checksum, found through the Program Files search). Install hints, README (table), Spec, example config, TestCases (TC-106 new, TC-112), Plan 6.3, Changes updated. The workflow has to be run by the user.
+
+## 6. Viewer check run
+**User:** Status? Start the viewer check.
+
+**Claude:** CI run 44070390690 (`560d5fd`) passed on all four jobs (144 tests; Windows 133). Starting the "Viewer check" workflow from here failed (HTTP 403: the token cannot dispatch workflows); the user started it. Run 44167663646 passed on all three platforms:
+- Linux (ubuntu-22.04): `/usr/bin/remote-viewer` 7.0 found; a real VNC console (TigerVNC `Xvnc`) opened through the tunnel, still connected after 8 s.
+- macOS: MacPorts installed `virt-viewer` (about 15 minutes); found at `/opt/local/bin/remote-viewer`, version 11.0.
+- Windows: MSI (checksum matched) installed to `Program Files\VirtViewer v11.0-256\bin`, found by the Program Files search (not on `PATH`), version 11.0-256.
+TC-106 pass; Plan 6.3 done. Still open: TC-103c (real host and viewer on all platforms), TC-121 on macOS.
