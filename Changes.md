@@ -4,6 +4,15 @@ Changes between releases. Newest on top.
 
 ## Unreleased
 
+**Consoles**
+- "Open console" in the graphics table of a running VM opens its VNC or
+  SPICE console in `remote-viewer` (virt-viewer), through the host's SSH
+  connection; nothing is opened on the host's network. The tunnel closes
+  when the viewer exits, or with "Close console".
+- Consoles of VMs on this machine are reached directly, without SSH.
+- The viewer is found on your `PATH`, in Homebrew's folders, or on Windows
+  in `Program Files\VirtViewer*`; set `[console] viewer` for another one.
+
 **Interface**
 - New app icon: a blue "V" on a green rounded square (window, Windows
   program, macOS app, Linux menu entry).

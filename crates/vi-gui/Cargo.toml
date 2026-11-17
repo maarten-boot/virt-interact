@@ -21,8 +21,12 @@ vi-ssh.workspace = true
 vi-backend.workspace = true
 eframe.workspace = true
 tracing.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "process", "io-util", "net"] }
 dirs.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+# Already in the tree (eframe); a safe killpg for the viewer's group.
+rustix = { version = "1", features = ["process"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

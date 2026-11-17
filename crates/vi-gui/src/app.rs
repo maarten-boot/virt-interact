@@ -16,6 +16,7 @@ use vi_core::contrast::{ContrastLevel, MAX_RATIO, MIN_RATIO, Palette};
 use vi_core::model::{Domain, DomainDetails, HostInventory};
 use vi_ssh::Secret;
 
+use crate::console::{self, ConsoleKey, ConsoleState};
 use crate::prompts::{GuiPrompter, PromptKind, PromptRequest};
 use crate::theme;
 use crate::view::{self, Filter, StateColor, StateFilter};
@@ -204,6 +205,14 @@ pub struct App {
     local_virsh: Option<PathBuf>,
     /// The local entries currently shown (from `[local]`).
     local_hosts: Vec<HostConfig>,
+    /// Consoles opening or open (SPEC-018); closed ones are removed.
+    pub consoles: HashMap<ConsoleKey, ConsoleState>,
+}
+
+/// A click in the graphics table.
+enum ConsoleAction {
+    Open(ConsoleKey),
+    Close(ConsoleKey),
 }
 
 impl App {
@@ -235,6 +244,7 @@ impl App {
             scroll_to_selection: false,
             local_virsh: None,
             local_hosts: Vec::new(),
+            consoles: HashMap::new(),
         };
         app.local_hosts = app.store.config.local_hosts(false);
         app.sync_hosts();
@@ -370,6 +380,31 @@ impl App {
         }
     }
 
+    /// Open a console of a VM (SPEC-018). Errors arrive as messages.
+    pub fn open_console(&mut self, key: ConsoleKey) {
+        let Some(h) = self.host_config(&key.host).cloned() else {
+            return;
+        };
+        let Some(w) = &self.worker else {
+            self.messages.push(Message::error(
+                "Consoles are not available (no background worker).",
+            ));
+            return;
+        };
+        let viewer = console::find_viewer(self.store.config.console.viewer.as_deref());
+        if w.open_console(h, self.store.config.ssh.clone(), key.clone(), viewer) {
+            self.consoles.insert(key, ConsoleState::Opening);
+        }
+    }
+
+    /// Close a console: its viewer is stopped and the tunnel closed.
+    pub fn close_console(&mut self, key: &ConsoleKey) {
+        if let Some(w) = &self.worker {
+            w.close_console(key);
+        }
+        self.consoles.remove(key);
+    }
+
     pub fn refresh_all(&mut self) {
         let names: Vec<String> = self.all_hosts().map(|h| h.name.clone()).collect();
         for n in names {
@@ -443,6 +478,21 @@ impl App {
                     self.selection = Selection::Host(host);
                 }
             }
+            Event::Console { key, state } => match state {
+                ConsoleState::Closed { error } => {
+                    self.consoles.remove(&key);
+                    if let Some(e) = error {
+                        self.messages.push(Message::error(format!(
+                            "Console of {} on {}: {e}",
+                            key.domain,
+                            self.display_name(&key.host)
+                        )));
+                    }
+                }
+                state => {
+                    self.consoles.insert(key, state);
+                }
+            },
         }
     }
 
@@ -1060,10 +1110,57 @@ impl App {
                 row(ui, "Autostart", view::yes_no(d.autostart));
             });
         let Some(x) = &d.details else { return };
-        self.components(ui, x);
+        match self.components(ui, x, host, &d) {
+            Some(ConsoleAction::Open(k)) => self.open_console(k),
+            Some(ConsoleAction::Close(k)) => self.close_console(&k),
+            None => {}
+        }
     }
 
-    fn components(&self, ui: &mut egui::Ui, x: &DomainDetails) {
+    /// The console cell of one graphics device (SPEC-018).
+    fn console_cell(
+        &self,
+        ui: &mut egui::Ui,
+        key: ConsoleKey,
+        d: &Domain,
+        gr: &vi_core::model::Graphics,
+    ) -> Option<ConsoleAction> {
+        let weak = theme::c(self.palette.weak_text);
+        match self.consoles.get(&key) {
+            Some(ConsoleState::Opening) => {
+                ui.label(RichText::new("opening…").color(weak));
+                None
+            }
+            Some(ConsoleState::Open { url }) => self
+                .button(ui, true, "Close console")
+                .on_hover_text(format!("The viewer is connected to {url}"))
+                .clicked()
+                .then_some(ConsoleAction::Close(key)),
+            _ => match view::console_availability(&d.state, gr) {
+                Ok(()) => self
+                    .button(ui, true, "Open console")
+                    .on_hover_text("Open in the external viewer, through the host's connection")
+                    .clicked()
+                    .then_some(ConsoleAction::Open(key)),
+                Err(reason) => {
+                    ui.horizontal(|ui| {
+                        self.button(ui, false, "Open console");
+                        ui.label(RichText::new(reason).color(weak));
+                    });
+                    None
+                }
+            },
+        }
+    }
+
+    fn components(
+        &self,
+        ui: &mut egui::Ui,
+        x: &DomainDetails,
+        host: &str,
+        d: &Domain,
+    ) -> Option<ConsoleAction> {
+        let mut action = None;
         let g = &x.general;
         egui::CollapsingHeader::new("General")
             .default_open(true)
@@ -1190,11 +1287,11 @@ impl App {
                     .num_columns(5)
                     .striped(true)
                     .show(ui, |ui| {
-                        for h in ["Type", "Listen", "Port", "TLS port", "Remote"] {
+                        for h in ["Type", "Listen", "Port", "TLS port", "Console"] {
                             ui.strong(h);
                         }
                         ui.end_row();
-                        for gr in &x.graphics {
+                        for (index, gr) in x.graphics.iter().enumerate() {
                             ui.label(&gr.kind);
                             ui.label(gr.listen.describe());
                             ui.label(gr.port.map_or_else(
@@ -1208,11 +1305,14 @@ impl App {
                                 |p| p.to_string(),
                             ));
                             ui.label(gr.tls_port.map_or_else(|| "-".into(), |p| p.to_string()));
-                            ui.label(if gr.reachable() {
-                                "reachable (console in v1.1)"
-                            } else {
-                                "not reachable remotely"
-                            });
+                            let key = ConsoleKey {
+                                host: host.to_string(),
+                                domain: d.name.clone(),
+                                index,
+                            };
+                            if let Some(a) = self.console_cell(ui, key, d, gr) {
+                                action = Some(a);
+                            }
                             ui.end_row();
                         }
                     });
@@ -1250,6 +1350,7 @@ impl App {
                         .desired_width(f32::INFINITY),
                 );
             });
+        action
     }
 
     fn contrast_control(&mut self, ui: &mut egui::Ui) {

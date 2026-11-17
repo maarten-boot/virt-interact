@@ -13,3 +13,16 @@
 - `vi-ssh`: `CommandRunner::open_stream` (default: "cannot forward"); `SshSession` opens `direct-tcpip` or `direct-streamlocal` channels. `vi_ssh::Tunnel`: a listener on `127.0.0.1:0`, forwards every connection until closed or dropped, counts connections and keeps the last error.
 - Tests: TC-100 (target part), TC-101 (tunnel unit tests), new TC-102a (through a real SSH session to the in-process test server, which now accepts forwarding channels: TCP, unix socket, refused target), TC-104 (part). 134 tests pass; fmt and clippy clean.
 - Spec SPEC-018 describes the target rules and the tunnel behaviour, including that any local process can reach the port while it is open.
+
+## 3. Phase 6.2: console button and viewer
+**User:** CI for 6.1 pushed; start 6.2.
+
+**Claude:** CI run 44057271940 (`8f6cec3`) passed: 134 tests (Windows 126). Phase 6.2 (SPEC-018):
+- Backend: `HypervisorBackend::graphics(runner, domain)` reads the live XML again before opening (default: no consoles, so TC-090 holds). `LocalRunner::open_stream` connects directly (TCP or unix socket): local VMs need no SSH but use the same listener.
+- Config `[console] viewer`; `vi-gui::console`: viewer search (PATH, Homebrew dirs, `Program Files\VirtViewer*\bin` newest first), install hint, URL.
+- Worker: `open_console`/`close_console`, `Event::Console` (Opening, Open, Closed with error). Uses the kept connection or connects without changing the host status. The viewer runs with the tunnel URL; the tunnel closes when it exits or on Close; forgetting a host or reloading the config closes its consoles.
+- GUI: "Open console"/"Close console" in the graphics table (column "Console"), disabled with the reason when not possible; errors as messages.
+- Found and fixed during testing: (1) the tunnel port could still accept briefly after "closed" → `Tunnel::shutdown().await`; (2) closing killed a wrapper script but not its child → the viewer gets its own process group on unix and the group gets SIGTERM (then SIGKILL after 2 s), via `rustix` (already in the tree; the workspace forbids `unsafe`); the test fails without the fix; (3) a test race (helper pid file) fixed.
+- End-to-end under Xvfb with a fake `virsh` (fixture VM, VNC port of a fake server) and a fake viewer: the viewer read `RFB 003.008` through the tunnel; Close and closing the window stop the viewer and its helper. No real `remote-viewer`/libvirt on the dev machine: TC-103c (real host, all platforms) is open.
+- `domdisplay` fallback dropped from the Spec: the live XML of a running domain always has the port.
+- 144 tests pass (3 runs); fmt and clippy clean. Spec, TestCases (TC-100, 103, 103a–c, 104, 105), Plan 6.2, README (Consoles), example config, Changes (Unreleased) updated.

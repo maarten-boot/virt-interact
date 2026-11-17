@@ -5,7 +5,7 @@ use std::time::Duration;
 use futures_util::stream::{self, StreamExt};
 use tracing::{debug, warn};
 use vi_core::config::HostConfig;
-use vi_core::model::{DiskSource, Domain, HostInventory};
+use vi_core::model::{DiskSource, Domain, Graphics, HostInventory};
 use vi_ssh::prompt::BoxFuture;
 use vi_ssh::{CommandOutput, CommandRunner, SshError, SshErrorKind};
 
@@ -139,6 +139,23 @@ impl LibvirtBackend {
         Ok(inv)
     }
 
+    /// The live graphics of one domain (`dumpxml`, SPEC-018). Any failure
+    /// is an error: the console cannot be opened without them.
+    pub async fn graphics(
+        &self,
+        runner: &dyn CommandRunner,
+        domain: &str,
+    ) -> Result<Vec<Graphics>, BackendError> {
+        let xml = self
+            .run(runner, &VirshCommand::DumpXml(domain.to_string()))
+            .await??;
+        let details = domxml::parse(&xml).map_err(|message| BackendError::Parse {
+            subcommand: "dumpxml".into(),
+            message,
+        })?;
+        Ok(details.graphics)
+    }
+
     /// One domain. Per-domain failures (a failing command, a timeout, bad
     /// XML) go into `Domain::error`; only SSH connection errors and access
     /// problems abort the refresh.
@@ -260,5 +277,13 @@ impl HypervisorBackend for LibvirtBackend {
         runner: &'a dyn CommandRunner,
     ) -> BoxFuture<'a, Result<HostInventory, BackendError>> {
         Box::pin(LibvirtBackend::inventory(self, runner))
+    }
+
+    fn graphics<'a>(
+        &'a self,
+        runner: &'a dyn CommandRunner,
+        domain: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<Graphics>, BackendError>> {
+        Box::pin(LibvirtBackend::graphics(self, runner, domain))
     }
 }

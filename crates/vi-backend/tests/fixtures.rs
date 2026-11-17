@@ -558,3 +558,41 @@ esac
     }
     assert!(calls.contains("dumpxml vm-j2sunl"));
 }
+
+// TC-103a: the live graphics of one domain for a console (SPEC-018), from
+// the captures: SPICE on a port, and `listen type="none"` refused.
+#[tokio::test]
+async fn graphics_for_console() {
+    use vi_core::model::ConsoleTarget;
+    let b = backend();
+    let dir = fixtures().join("libvirt-10.0.0");
+    let m = add_vm(MockRunner::new(), &b, &dir.join("vm-wtu5zf"), None);
+    let m = add_vm(m, &b, &dir.join("vm-rcqh1f"), None);
+
+    let g = HypervisorBackend::graphics(&b, &m, "vm-wtu5zf")
+        .await
+        .unwrap();
+    assert_eq!(g[0].kind, "spice");
+    assert!(matches!(
+        g[0].console_target(),
+        Ok(ConsoleTarget::Tcp { ref host, port }) if host == "127.0.0.1" && Some(port) == g[0].port
+    ));
+    let g = HypervisorBackend::graphics(&b, &m, "vm-rcqh1f")
+        .await
+        .unwrap();
+    assert!(g[0].console_target().unwrap_err().contains("not reachable"));
+
+    // Only dumpxml was run, read-only.
+    assert!(
+        m.commands()
+            .iter()
+            .all(|c| c.contains(" -r ") && c.contains(" dumpxml "))
+    );
+
+    // A domain that is gone is an error, not an empty list.
+    let m = MockRunner::new().with(
+        &b.command_line(&VirshCommand::DumpXml("gone".into())),
+        CommandOutput::failed(1, "error: failed to get domain 'gone'\n"),
+    );
+    assert!(HypervisorBackend::graphics(&b, &m, "gone").await.is_err());
+}

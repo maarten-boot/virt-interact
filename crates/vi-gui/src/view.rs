@@ -2,7 +2,7 @@
 //! for the detail panel (SPEC-010, SPEC-015). Kept free of egui so it can be
 //! unit tested.
 
-use vi_core::model::{Disk, DiskSource, Domain, DomainState, OtherDevice, human_bytes};
+use vi_core::model::{Disk, DiskSource, Domain, DomainState, Graphics, OtherDevice, human_bytes};
 
 /// State filter in the toolbar (SPEC-015).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -135,6 +135,15 @@ pub fn yes_no(v: Option<bool>) -> &'static str {
     }
 }
 
+/// Can the console of `g` be opened (SPEC-018)? `Err` is the reason shown
+/// next to the disabled button. The worker checks again with live data.
+pub fn console_availability(state: &DomainState, g: &Graphics) -> Result<(), String> {
+    if !state.is_active() {
+        return Err("VM not running".into());
+    }
+    g.console_target().map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,5 +244,32 @@ mod tests {
         );
         assert_eq!(kib_text(Some(1024)), "1.0 MiB");
         assert_eq!(kib_text(None), "unknown");
+    }
+
+    // TC-104: the console button is offered only for a running VM with a
+    // reachable VNC/SPICE console; otherwise the reason is shown.
+    #[test]
+    fn console_button_availability() {
+        use vi_core::model::Listen;
+        let g = |listen: Listen, port: Option<u16>| Graphics {
+            kind: "vnc".into(),
+            listen,
+            port,
+            tls_port: None,
+            autoport: true,
+        };
+        let ok = g(Listen::Address(Some("127.0.0.1".into())), Some(5900));
+        assert_eq!(console_availability(&DomainState::Running, &ok), Ok(()));
+        assert_eq!(console_availability(&DomainState::Paused, &ok), Ok(()));
+        assert_eq!(
+            console_availability(&DomainState::ShutOff, &ok),
+            Err("VM not running".into())
+        );
+        let none = g(Listen::None, None);
+        assert!(
+            console_availability(&DomainState::Running, &none)
+                .unwrap_err()
+                .contains("not reachable")
+        );
     }
 }

@@ -2,6 +2,7 @@
 //! only parses the command line and starts [`app::App`].
 
 pub mod app;
+pub mod console;
 pub mod prompts;
 pub mod startup;
 pub mod theme;

@@ -553,3 +553,70 @@ fn tree_width_is_stable() {
         assert_eq!(w, w0, "status {status:?}");
     }
 }
+
+// TC-103 (app part): console events change what the graphics table shows
+// (every state renders headless); a failure becomes an error message that
+// names the VM; without a worker, opening says so.
+#[test]
+fn console_states_in_the_app() {
+    use vi_gui::console::{ConsoleKey, ConsoleState};
+    use vi_gui::worker::Event;
+    let dir = tempfile::tempdir().unwrap();
+    let (store, cache) = setup(dir.path());
+    cache
+        .save(&CachedInventory::new(
+            "lab",
+            1_700_000_000,
+            fixture_inventory(),
+        ))
+        .unwrap();
+    let mut app = App::new(store, vec![], Some(cache));
+    let ctx = egui::Context::default();
+    app.apply_theme(&ctx);
+    app.selection = Selection::Domain("lab".into(), "vm-j2sunl".into());
+    let key = ConsoleKey {
+        host: "lab".into(),
+        domain: "vm-j2sunl".into(),
+        index: 0,
+    };
+    frame(&mut app, &ctx);
+
+    app.open_console(key.clone());
+    assert!(app.messages.last().unwrap().text.contains("not available"));
+    app.messages.clear();
+
+    for state in [
+        ConsoleState::Opening,
+        ConsoleState::Open {
+            url: "vnc://127.0.0.1:40000".into(),
+        },
+    ] {
+        app.handle(Event::Console {
+            key: key.clone(),
+            state: state.clone(),
+        });
+        assert_eq!(app.consoles.get(&key), Some(&state));
+        frame(&mut app, &ctx);
+    }
+    app.handle(Event::Console {
+        key: key.clone(),
+        state: ConsoleState::Closed {
+            error: Some("the viewer exited with exit status: 1".into()),
+        },
+    });
+    assert!(app.consoles.is_empty());
+    let m = &app.messages.last().unwrap().text;
+    assert!(
+        m.contains("vm-j2sunl") && m.contains("exit status: 1"),
+        "{m}"
+    );
+    frame(&mut app, &ctx);
+
+    // A clean close leaves no message.
+    app.messages.clear();
+    app.handle(Event::Console {
+        key: key.clone(),
+        state: ConsoleState::Closed { error: None },
+    });
+    assert!(app.messages.is_empty());
+}

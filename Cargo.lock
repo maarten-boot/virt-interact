@@ -4896,6 +4896,7 @@ version = "1.0.0"
 dependencies = [
  "dirs",
  "eframe",
+ "rustix 1.1.6",
  "tempfile",
  "tokio",
  "tracing",

@@ -83,7 +83,7 @@ Each host has these fields:
   - `"never"`: hidden.
 - The same allowlisted, read-only command lines as for remote hosts (SPEC-011: `LC_ALL=C`, `virsh -r`, quoting) run through the local POSIX shell (`sh -c`), with the `[ssh] command_timeout_secs` limit. Platforms without a POSIX shell (Windows) do not show local entries in `"auto"` mode.
 - Local entries are not stored in `[[hosts]]` and cannot be edited or removed in the GUI. They are configured only through `[local]`. Refresh, status, cache, filter and keyboard work as for other hosts.
-- v1.1 (SPEC-018): the console of a local VM is opened directly, without a tunnel.
+- v1.1 (SPEC-018): the console of a local VM is reached directly, without SSH: the same local listener connects straight to the TCP port or unix socket.
 
 ## 4. SSH
 
@@ -216,10 +216,10 @@ Scope of an error:
 ## 8. Remote viewing
 
 ### SPEC-018: Remote console through SSH tunnel (v1.1)
-- For a running domain with VNC or SPICE graphics, the user can open a console.
-- The app reads the live graphics listen address and port, or the unix socket, from the live XML.
-  - `virsh domdisplay` is only a fallback. For VNC it reports a display number (`vnc://127.0.0.1:1` means port 5901); for SPICE it reports the real port (`spice://127.0.0.1:5907`).
-  - If the graphics have `listen type="none"` (for example, SPICE with local GL), the console is marked "not reachable remotely" and the console action is disabled. In that case `virsh domdisplay` fails with `error: No graphical display found`; this is not treated as a host error.
+- For a running (or paused) domain with VNC or SPICE graphics, the user can open a console: the graphics table in the VM details has an "Open console" button per device. When it cannot be opened, the button is disabled and the reason is shown next to it (VM not running, not reachable remotely, …).
+- On "Open console", the app reads the domain's live XML again (`virsh dumpxml`, allowlisted, read-only), so the port is current even when the shown inventory is cached. It uses the kept connection of the host, or connects (prompts as for a refresh); the host's inventory status does not change.
+  - `virsh domdisplay` is not used: the live XML of a running domain always has the port (also with autoport). For VNC `domdisplay` would report a display number (`vnc://127.0.0.1:1` means port 5901), for SPICE the real port.
+  - If the graphics have `listen type="none"` (for example, SPICE with local GL), the console is marked "not reachable remotely" and the console action is disabled. (`virsh domdisplay` would fail with `error: No graphical display found`.)
 - The forward target follows from the live graphics (`Graphics::console_target`):
   - a TCP listen address as is; a wildcard (`0.0.0.0`, `::`) or the default listen as `127.0.0.1` on the host; a network listen by its resolved address;
   - a unix socket by its path;
@@ -229,8 +229,13 @@ Scope of an error:
   - `direct-streamlocal` for a unix socket listen.
   - Several connections at once are forwarded (SPICE opens one per channel). Closing the tunnel stops the listener and ends every connection. A connection the host refuses is closed locally and its error kept for the GUI.
   - The port is reachable only from this machine, but by any local process while the tunnel is open; a console password still applies.
-- It launches an external viewer (default `remote-viewer`; the path is configurable) with `vnc://127.0.0.1:<port>` or `spice://127.0.0.1:<port>`.
-- The tunnel closes when the viewer exits or the user disconnects.
+- It launches an external viewer with `vnc://127.0.0.1:<port>` or `spice://127.0.0.1:<port>` as its only argument.
+  - The viewer is `[console] viewer` in the config (a path, or a program name), else `remote-viewer` (virt-viewer). A name is searched on `PATH`, then `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin`, and on Windows in `Program Files\VirtViewer*\bin` (newest version first; `.exe` added).
+  - Not found: an error with the install hint for the platform (Linux: the `virt-viewer` package; macOS: `brew install virt-viewer`; Windows: the virt-viewer MSI) and the config key.
+- The tunnel lives as long as the viewer:
+  - When the viewer exits, the tunnel closes. A viewer that fails (non-zero exit) is reported with its last stderr line and any tunnel error.
+  - "Close console" (the same button while open) stops the viewer and closes the tunnel. On Linux/macOS the viewer runs in its own process group; closing sends it SIGTERM, then SIGKILL after 2 s, so the helpers of a wrapper script stop too. The same happens when the app is closed, or the host is edited or removed, or the config is reloaded.
+  - Errors appear as a message naming the VM and host. One console per graphics device at a time.
 - If the console has a password, the viewer asks for it. The app does not read or store console passwords.
 
 ### SPEC-019: Embedded VNC viewer (later)

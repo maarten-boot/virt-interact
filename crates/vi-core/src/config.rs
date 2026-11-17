@@ -42,7 +42,19 @@ pub struct Config {
     pub logging: LoggingConfig,
     /// The local machine, read without SSH (SPEC-020).
     pub local: LocalConfig,
+    /// Remote consoles (SPEC-018).
+    pub console: ConsoleConfig,
     pub hosts: Vec<HostConfig>,
+}
+
+/// `[console]`: the external viewer (SPEC-018).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ConsoleConfig {
+    /// Viewer program: a path, or a name searched like `remote-viewer`
+    /// (the default when unset).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viewer: Option<String>,
 }
 
 /// When the local libvirt is shown (SPEC-020).
@@ -778,6 +790,14 @@ virsh_prefix = "sudo -n"
         assert!(!cfg.ui.refresh_on_start);
         let (cfg, _) = Config::parse("[ui]\nrefresh_on_start = true\n", Path::new("c")).unwrap();
         assert!(cfg.ui.refresh_on_start);
+        // [console] (SPEC-018): unset by default; a viewer path is kept.
+        assert_eq!(cfg.console.viewer, None);
+        let (cfg, _) = Config::parse(
+            "[console]\nviewer = \"/opt/v/remote-viewer\"\n",
+            Path::new("c"),
+        )
+        .unwrap();
+        assert_eq!(cfg.console.viewer.as_deref(), Some("/opt/v/remote-viewer"));
     }
 
     // TC-028: every ```toml block in the README must parse.

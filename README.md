@@ -2,13 +2,13 @@
 
 A desktop GUI (Windows, Linux, macOS) that connects to remote hosts over SSH
 (key-based auth) and builds a read-only inventory of their virtual machines
-(libvirt/virsh first). Remote VNC/SPICE viewing over the same SSH connection
-follows in v1.1.
+(libvirt/virsh first), and opens their VNC/SPICE consoles over the same SSH
+connection (v1.1, in development).
 
 Status: version 1.0.0 is released (GitHub releases page): the read-only
 inventory (see `Changes.md` for what it does and its known limitations).
-Next: VNC/SPICE consoles over SSH (1.1). See `architecture/Spec.md` and
-`architecture/Plan.md`.
+In development for 1.1: VNC/SPICE consoles over SSH (see "Unreleased" in
+`Changes.md`). See `architecture/Spec.md` and `architecture/Plan.md`.
 
 ## Install
 
@@ -100,6 +100,17 @@ virsh commands, run locally. Configure or hide them under `[local]`
 To refresh automatically at startup, set `refresh_on_start = true` under
 `[ui]` (see `examples/config.example.toml`). In the tree, Up/Down/Home/End
 move the selection and Enter refreshes the selected host.
+
+**Consoles** (1.1, in development): select a running VM; its Graphics table
+has **Open console** for each VNC or SPICE display. The console opens in
+`remote-viewer` (from virt-viewer) through the host's SSH connection: the
+app listens on a random port on `127.0.0.1` and forwards it, so the
+display does not need to be reachable on the host's network. Closing the
+viewer closes the tunnel; **Close console** stops both. Install the viewer
+with your package manager (`virt-viewer`), `brew install virt-viewer` on
+macOS, or the virt-viewer MSI on Windows; another viewer can be set with
+`[console] viewer = "/path/to/viewer"`. A console password, if set, is
+asked by the viewer.
 
 Contrast is set under **Settings…**; the choice is saved to the config.
 Hovering or pressing changes only colours; nothing moves. Drag the line

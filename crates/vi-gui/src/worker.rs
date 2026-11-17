@@ -5,6 +5,8 @@
 //!   not ask for a passphrase again. If a reused connection turns out to be
 //!   dead, the worker reconnects once.
 //! - Hosts run in parallel; a slow host does not delay the others.
+//! - Consoles (SPEC-018): a tunnel over the host's connection and an
+//!   external viewer; the tunnel lives as long as the viewer.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -12,12 +14,15 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use tokio::sync::oneshot;
 use vi_backend::{BackendError, BackendErrorKind};
 use vi_core::cache::now_secs;
 use vi_core::config::{HostConfig, SshSettings};
 use vi_core::model::HostInventory;
 use vi_ssh::prompt::BoxFuture;
-use vi_ssh::{CommandRunner, ConnectOptions, Prompter, SshConfig, SshSession, resolve};
+use vi_ssh::{CommandRunner, ConnectOptions, Prompter, SshConfig, SshSession, Tunnel, resolve};
+
+use crate::console::{ConsoleKey, ConsoleState, viewer_url};
 
 /// What the GUI shows for a host (SPEC-012).
 #[derive(Debug, Clone, PartialEq)]
@@ -76,6 +81,11 @@ pub enum Event {
         host: String,
         inventory: HostInventory,
         taken_at: u64,
+    },
+    /// A console changed state (SPEC-018).
+    Console {
+        key: ConsoleKey,
+        state: ConsoleState,
     },
 }
 
@@ -176,6 +186,9 @@ impl SessionTable {
 
 type Sessions = Arc<Mutex<SessionTable>>;
 
+/// Open consoles; sending on (or dropping) the sender closes one.
+type Consoles = Arc<Mutex<HashMap<ConsoleKey, oneshot::Sender<()>>>>;
+
 pub struct Worker {
     rt: tokio::runtime::Runtime,
     events: Sender<Event>,
@@ -184,6 +197,7 @@ pub struct Worker {
     notify: Arc<dyn Fn() + Send + Sync>,
     sessions: Sessions,
     running: Arc<Mutex<HashSet<String>>>,
+    consoles: Consoles,
     /// Extra per-command limit in the backend (tests; an SSH session has
     /// its own command timeout).
     pub command_timeout: Option<Duration>,
@@ -212,6 +226,7 @@ impl Worker {
                 notify,
                 sessions: Arc::default(),
                 running: Arc::default(),
+                consoles: Arc::default(),
                 command_timeout: None,
             },
             rx,
@@ -228,14 +243,7 @@ impl Worker {
         if !self.running.lock().expect("lock").insert(host.name.clone()) {
             return false;
         }
-        let ctx = TaskCtx {
-            events: self.events.clone(),
-            connector: self.connector.clone(),
-            prompter: self.prompter.clone(),
-            notify: self.notify.clone(),
-            sessions: self.sessions.clone(),
-            command_timeout: self.command_timeout,
-        };
+        let ctx = self.ctx();
         let running = self.running.clone();
         self.rt.spawn(async move {
             let name = host.name.clone();
@@ -252,14 +260,81 @@ impl Worker {
     }
 
     /// Drop the kept connection of a host (host edited or removed). A
-    /// refresh still running for it is discarded when it finishes.
+    /// refresh still running for it is discarded when it finishes; its
+    /// consoles are closed.
     pub fn forget(&self, host: &str) {
         self.sessions.lock().expect("lock").forget(host);
+        self.consoles
+            .lock()
+            .expect("lock")
+            .retain(|k, _| k.host != host);
     }
 
-    /// Drop all connections (config reloaded).
+    /// Drop all connections and close all consoles (config reloaded).
     pub fn forget_all(&self) {
         self.sessions.lock().expect("lock").forget_all();
+        self.consoles.lock().expect("lock").clear();
+    }
+
+    fn ctx(&self) -> TaskCtx {
+        TaskCtx {
+            events: self.events.clone(),
+            connector: self.connector.clone(),
+            prompter: self.prompter.clone(),
+            notify: self.notify.clone(),
+            sessions: self.sessions.clone(),
+            command_timeout: self.command_timeout,
+        }
+    }
+
+    /// Is this console opening or open?
+    pub fn console_open(&self, key: &ConsoleKey) -> bool {
+        self.consoles.lock().expect("lock").contains_key(key)
+    }
+
+    /// Open a console (SPEC-018): read the live graphics, open a tunnel and
+    /// run `viewer` (or report why it cannot be found) until it exits or
+    /// [`Worker::close_console`]. Returns false if it is already open.
+    pub fn open_console(
+        &self,
+        host: HostConfig,
+        ssh: SshSettings,
+        key: ConsoleKey,
+        viewer: Result<PathBuf, String>,
+    ) -> bool {
+        let (close, closed) = oneshot::channel();
+        {
+            let mut c = self.consoles.lock().expect("lock");
+            if c.contains_key(&key) {
+                return false;
+            }
+            c.insert(key.clone(), close);
+        }
+        let ctx = self.ctx();
+        let consoles = self.consoles.clone();
+        self.rt.spawn(async move {
+            ctx.send(Event::Console {
+                key: key.clone(),
+                state: ConsoleState::Opening,
+            });
+            let error = ctx.console(&host, &ssh, &key, viewer, closed).await.err();
+            if let Some(e) = &error {
+                tracing::warn!(host = %key.host, domain = %key.domain, "console: {e}");
+            }
+            consoles.lock().expect("lock").remove(&key);
+            ctx.send(Event::Console {
+                key,
+                state: ConsoleState::Closed { error },
+            });
+        });
+        true
+    }
+
+    /// Close a console: the viewer is stopped and the tunnel closed.
+    pub fn close_console(&self, key: &ConsoleKey) {
+        if let Some(tx) = self.consoles.lock().expect("lock").remove(key) {
+            let _ = tx.send(());
+        }
     }
 }
 
@@ -352,6 +427,17 @@ impl TaskCtx {
         token: Token,
     ) -> Result<Arc<dyn CommandRunner>, BackendError> {
         self.status(&host.name, HostStatus::Connecting);
+        self.connect_quiet(host, ssh, token).await
+    }
+
+    /// Connect without changing the host's status (for a console: the
+    /// inventory status stays as it is).
+    async fn connect_quiet(
+        &self,
+        host: &HostConfig,
+        ssh: &SshSettings,
+        token: Token,
+    ) -> Result<Arc<dyn CommandRunner>, BackendError> {
         let r = self
             .connector
             .connect(host, ssh, self.prompter.as_ref())
@@ -363,6 +449,138 @@ impl TaskCtx {
             .expect("lock")
             .store(&host.name, token, r.clone());
         Ok(r)
+    }
+}
+
+impl TaskCtx {
+    /// The kept connection of `host`, or a new one (kept for later).
+    async fn runner(
+        &self,
+        host: &HostConfig,
+        ssh: &SshSettings,
+    ) -> Result<(Arc<dyn CommandRunner>, bool), BackendError> {
+        let (token, existing) = {
+            let t = self.sessions.lock().expect("lock");
+            (t.token(&host.name), t.map.get(&host.name).cloned())
+        };
+        match existing {
+            Some(r) => Ok((r, true)),
+            None => Ok((self.connect_quiet(host, ssh, token).await?, false)),
+        }
+    }
+
+    /// One console from start to end (SPEC-018). `Err` is shown to the user.
+    async fn console(
+        &self,
+        host: &HostConfig,
+        ssh: &SshSettings,
+        key: &ConsoleKey,
+        viewer: Result<PathBuf, String>,
+        mut closed: oneshot::Receiver<()>,
+    ) -> Result<(), String> {
+        let viewer = viewer?;
+        let backend =
+            vi_backend::for_host_with(host, self.command_timeout).map_err(|e| e.to_string())?;
+        let (mut runner, reused) = self.runner(host, ssh).await.map_err(|e| e.to_string())?;
+        let mut graphics = backend.graphics(&*runner, &key.domain).await;
+        if reused && graphics.as_ref().is_err_and(connection_lost) {
+            tracing::info!(host = %host.name, "connection lost; reconnecting for the console");
+            self.sessions.lock().expect("lock").map.remove(&host.name);
+            runner = self.runner(host, ssh).await.map_err(|e| e.to_string())?.0;
+            graphics = backend.graphics(&*runner, &key.domain).await;
+        }
+        let graphics = graphics.map_err(|e| e.to_string())?;
+        let g = graphics
+            .get(key.index)
+            .ok_or("this graphics device is no longer in the domain")?;
+        let target = g.console_target()?;
+        let tunnel = Tunnel::start(runner, target)
+            .await
+            .map_err(|e| format!("cannot open a local port for the console: {e}"))?;
+        let url = viewer_url(&g.kind, tunnel.local_addr());
+        let mut cmd = tokio::process::Command::new(&viewer);
+        cmd.arg(&url)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        // Its own process group, so helpers of a wrapper script stop too.
+        #[cfg(unix)]
+        cmd.process_group(0);
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("cannot start {}: {e}", viewer.display()))?;
+        let group = ViewerGroup(child.id());
+        tracing::info!(host = %key.host, domain = %key.domain, %url, viewer = %viewer.display(), "console open");
+        let stderr = child.stderr.take().map(|mut s| {
+            tokio::spawn(async move {
+                use tokio::io::AsyncReadExt;
+                let mut buf = Vec::new();
+                let _ = s.read_to_end(&mut buf).await;
+                buf
+            })
+        });
+        self.send(Event::Console {
+            key: key.clone(),
+            state: ConsoleState::Open { url },
+        });
+        let status = tokio::select! {
+            s = child.wait() => Some(s),
+            _ = &mut closed => None,
+        };
+        let tunnel_error = tunnel.last_error();
+        let Some(status) = status else {
+            // Closed by the user (or the host was forgotten): ask the viewer
+            // to stop, then force it.
+            drop(group);
+            if tokio::time::timeout(Duration::from_secs(2), child.wait())
+                .await
+                .is_err()
+            {
+                let _ = child.kill().await;
+            }
+            tunnel.shutdown().await;
+            return Ok(());
+        };
+        tunnel.shutdown().await;
+        let status = status.map_err(|e| format!("viewer: {e}"))?;
+        if status.success() {
+            return Ok(());
+        }
+        let mut msg = format!("the viewer exited with {status}");
+        if let Some(h) = stderr
+            && let Ok(buf) = h.await
+        {
+            let text = String::from_utf8_lossy(&buf);
+            if let Some(last) = text.lines().rev().find(|l| !l.trim().is_empty()) {
+                msg.push_str(&format!(": {}", last.trim()));
+            }
+        }
+        if let Some(e) = tunnel_error {
+            msg.push_str(&format!(" (tunnel: {e})"));
+        }
+        Err(msg)
+    }
+}
+
+/// The viewer's process group (unix). Dropping it sends SIGTERM to the
+/// group: on close, when the viewer has ended (leftover helpers), and when
+/// the app quits (the worker's runtime drops the task). Elsewhere a no-op;
+/// the viewer itself is also killed on drop (`kill_on_drop`).
+struct ViewerGroup(Option<u32>);
+
+impl Drop for ViewerGroup {
+    fn drop(&mut self) {
+        // The group was created for the viewer (process_group(0)), so its
+        // id is the viewer's pid. An already empty group is fine.
+        #[cfg(unix)]
+        if let Some(pid) = self
+            .0
+            .and_then(|p| i32::try_from(p).ok())
+            .and_then(rustix::process::Pid::from_raw)
+        {
+            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::TERM);
+        }
     }
 }
 
@@ -439,6 +657,17 @@ mod tests {
                     .name
                     .starts_with("hang")
                     .then_some(Duration::from_secs(600));
+                if host.name.starts_with("gfx") {
+                    // vm1 has a VNC console on 127.0.0.1:5999.
+                    let b = LibvirtBackend::new("qemu:///system", None).unwrap();
+                    let xml = "<domain><name>vm1</name><devices>\
+                        <graphics type='vnc' port='5999' listen='127.0.0.1'/>\
+                        </devices></domain>";
+                    return Ok(Arc::new(healthy(None).with(
+                        &b.command_line(&VirshCommand::DumpXml("vm1".into())),
+                        CommandOutput::ok(xml),
+                    )) as Arc<dyn CommandRunner>);
+                }
                 Ok(Arc::new(healthy(delay)) as Arc<dyn CommandRunner>)
             })
         }
@@ -471,6 +700,7 @@ mod tests {
                 } => {
                     assert_eq!(inventory.domains.len(), 1, "{host}");
                 }
+                Event::Console { .. } => {}
             }
         }
         seen
@@ -560,7 +790,7 @@ mod tests {
             .try_iter()
             .map(|e| match e {
                 Event::Status { status, .. } => status,
-                Event::Inventory { .. } => panic!("old result reported"),
+                Event::Inventory { .. } | Event::Console { .. } => panic!("unexpected event"),
             })
             .collect();
         assert_eq!(statuses.last(), Some(&HostStatus::Idle), "{statuses:?}");
@@ -601,5 +831,188 @@ mod tests {
             let o = r.run("printf local").await.unwrap();
             assert_eq!(o.stdout_text(), "local");
         });
+    }
+
+    /// Console events of one key until it is closed; returns all states.
+    fn console_states(rx: &Receiver<Event>) -> Vec<ConsoleState> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut v = Vec::new();
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if let Event::Console { state, .. } = rx.recv_timeout(left).expect("console event") {
+                let done = matches!(state, ConsoleState::Closed { .. });
+                v.push(state);
+                if done {
+                    return v;
+                }
+            }
+        }
+    }
+
+    fn key(host: &str) -> ConsoleKey {
+        ConsoleKey {
+            host: host.into(),
+            domain: "vm1".into(),
+            index: 0,
+        }
+    }
+
+    /// A shell script standing in for remote-viewer.
+    #[cfg(unix)]
+    fn script(dir: &std::path::Path, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let p = dir.join("viewer.sh");
+        std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    }
+
+    // TC-103: open → the viewer gets the tunnel URL → it exits → closed
+    // without error, and the tunnel port is closed with it.
+    #[cfg(unix)]
+    #[test]
+    fn console_lives_as_long_as_the_viewer() {
+        let (w, rx, _) = worker();
+        let d = tempfile::tempdir().unwrap();
+        let out = d.path().join("url");
+        let v = script(
+            d.path(),
+            &format!("echo \"$1\" > '{}'; sleep 0.3", out.display()),
+        );
+        assert!(w.open_console(host("gfx1"), SshSettings::default(), key("gfx1"), Ok(v)));
+        assert!(w.console_open(&key("gfx1")));
+        let states = console_states(&rx);
+        assert_eq!(states[0], ConsoleState::Opening);
+        let ConsoleState::Open { url } = &states[1] else {
+            panic!("{states:?}")
+        };
+        assert!(url.starts_with("vnc://127.0.0.1:"), "{url}");
+        assert_eq!(states[2], ConsoleState::Closed { error: None });
+        assert_eq!(std::fs::read_to_string(&out).unwrap().trim(), url);
+        assert!(!w.console_open(&key("gfx1")));
+        let port = url.rsplit(':').next().unwrap();
+        assert!(std::net::TcpStream::connect(format!("127.0.0.1:{port}")).is_err());
+        // The host status was not touched (no "connecting" for a console).
+        assert!(rx.try_iter().all(|e| !matches!(e, Event::Status { .. })));
+    }
+
+    // TC-103: Close stops a viewer that would run for a long time; forget
+    // (host removed) does the same.
+    #[cfg(unix)]
+    #[test]
+    fn close_console_stops_the_viewer() {
+        let (w, rx, _) = worker();
+        let d = tempfile::tempdir().unwrap();
+        // A wrapper script whose helper must stop too.
+        let pidfile = d.path().join("helper.pid");
+        let v = script(
+            d.path(),
+            &format!("sleep 30 & echo $! > '{}'; wait", pidfile.display()),
+        );
+        let start = Instant::now();
+        w.open_console(
+            host("gfx2"),
+            SshSettings::default(),
+            key("gfx2"),
+            Ok(v.clone()),
+        );
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if let Event::Console {
+                state: ConsoleState::Open { .. },
+                ..
+            } = rx.recv_timeout(left).unwrap()
+            {
+                break;
+            }
+        }
+        assert!(
+            !w.open_console(
+                host("gfx2"),
+                SshSettings::default(),
+                key("gfx2"),
+                Ok(v.clone())
+            ),
+            "already open"
+        );
+        // The wrapper has started its helper.
+        let started = (0..500).any(|_| {
+            std::thread::sleep(Duration::from_millis(10));
+            std::fs::read_to_string(&pidfile).is_ok_and(|s| s.ends_with('\n'))
+        });
+        assert!(started, "helper not started");
+        w.close_console(&key("gfx2"));
+        assert_eq!(
+            console_states(&rx).last(),
+            Some(&ConsoleState::Closed { error: None })
+        );
+        let helper = std::fs::read_to_string(&pidfile)
+            .unwrap()
+            .trim()
+            .to_string();
+        let gone = (0..100).any(|_| {
+            std::thread::sleep(Duration::from_millis(20));
+            !std::process::Command::new("kill")
+                .args(["-0", &helper])
+                .status()
+                .unwrap()
+                .success()
+        });
+        assert!(gone, "helper {helper} of the viewer still runs");
+        assert!(start.elapsed() < Duration::from_secs(10));
+
+        w.open_console(host("gfx2"), SshSettings::default(), key("gfx2"), Ok(v));
+        std::thread::sleep(Duration::from_millis(200));
+        w.forget("gfx2");
+        assert!(matches!(
+            console_states(&rx).last(),
+            Some(ConsoleState::Closed { .. })
+        ));
+    }
+
+    // TC-103: failures become a Closed error: no viewer, the viewer fails
+    // (its last stderr line is shown), no console in the live XML, VM gone.
+    #[test]
+    fn console_errors_are_reported() {
+        let (w, rx, _) = worker();
+        let err = |rx: &Receiver<Event>| match console_states(rx).pop() {
+            Some(ConsoleState::Closed { error: Some(e) }) => e,
+            s => panic!("{s:?}"),
+        };
+        w.open_console(
+            host("gfx3"),
+            SshSettings::default(),
+            key("gfx3"),
+            Err("viewer not found".into()),
+        );
+        assert_eq!(err(&rx), "viewer not found");
+
+        #[cfg(unix)]
+        {
+            let d = tempfile::tempdir().unwrap();
+            let v = script(d.path(), "echo 'cannot connect to display' >&2; exit 3");
+            w.open_console(host("gfx3"), SshSettings::default(), key("gfx3"), Ok(v));
+            let e = err(&rx);
+            assert!(
+                e.contains("exit status: 3") && e.contains("cannot connect to display"),
+                "{e}"
+            );
+        }
+
+        let exe = PathBuf::from("/nonexistent/viewer");
+        // Host without graphics in vm1's XML.
+        w.open_console(
+            host("plain"),
+            SshSettings::default(),
+            key("plain"),
+            Ok(exe.clone()),
+        );
+        assert!(err(&rx).contains("no longer in the domain"));
+        // Unknown domain: dumpxml fails.
+        let mut k = key("gfx3");
+        k.domain = "gone".into();
+        w.open_console(host("gfx3"), SshSettings::default(), k, Ok(exe));
+        assert!(!err(&rx).is_empty());
     }
 }

@@ -3,12 +3,14 @@
 //! host key, no passphrase.
 
 use std::ffi::{OsStr, OsString};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use vi_core::model::ConsoleTarget;
 use vi_ssh::prompt::BoxFuture;
-use vi_ssh::{CommandOutput, CommandRunner, SshError};
+use vi_ssh::{CommandOutput, CommandRunner, ConsoleStream, SshError};
 
 /// Directories searched for `virsh` after `PATH`. An app started from the
 /// macOS Finder or Dock gets a minimal `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`)
@@ -104,6 +106,48 @@ impl CommandRunner for LocalRunner {
             }
         })
     }
+
+    fn open_stream<'a>(
+        &'a self,
+        target: &'a ConsoleTarget,
+        _origin: SocketAddr,
+    ) -> BoxFuture<'a, Result<Box<dyn ConsoleStream>, SshError>> {
+        Box::pin(async move {
+            match tokio::time::timeout(self.timeout, LocalRunner::connect_console(target)).await {
+                Ok(Ok(s)) => Ok(s),
+                Ok(Err(e)) => Err(SshError::Forward {
+                    target: target.to_string(),
+                    reason: e.to_string(),
+                }),
+                Err(_) => Err(SshError::Timeout {
+                    what: format!("connecting to the console at {target}"),
+                    secs: self.timeout.as_secs(),
+                }),
+            }
+        })
+    }
+}
+
+impl LocalRunner {
+    /// Connect straight to a console on this machine (SPEC-018: a local VM
+    /// needs no SSH; the same local listener is used, so sockets work too).
+    async fn connect_console(target: &ConsoleTarget) -> std::io::Result<Box<dyn ConsoleStream>> {
+        match target {
+            ConsoleTarget::Tcp { host, port } => {
+                let s = tokio::net::TcpStream::connect((host.as_str(), *port)).await?;
+                Ok(Box::new(s))
+            }
+            #[cfg(unix)]
+            ConsoleTarget::Socket(path) => {
+                let s = tokio::net::UnixStream::connect(path).await?;
+                Ok(Box::new(s))
+            }
+            #[cfg(not(unix))]
+            ConsoleTarget::Socket(_) => Err(std::io::Error::other(
+                "unix sockets are not available on this platform",
+            )),
+        }
+    }
 }
 
 /// `virsh` on the [`search_path`], if any (for `[local] enabled = "auto"`).
@@ -137,6 +181,53 @@ fn is_executable(p: &Path) -> bool {
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+
+    // TC-103b: a local console is reached directly (TCP and unix socket);
+    // nothing listening is a clear error naming the target.
+    #[tokio::test]
+    async fn local_console_streams() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let r = LocalRunner::new(Duration::from_secs(5));
+        let origin: SocketAddr = "127.0.0.1:1".parse().unwrap();
+
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut s, _) = l.accept().await.unwrap();
+            s.write_all(b"RFB").await.unwrap();
+        });
+        let t = ConsoleTarget::Tcp {
+            host: "127.0.0.1".into(),
+            port,
+        };
+        let Ok(mut s) = r.open_stream(&t, origin).await else {
+            panic!("tcp")
+        };
+        let mut buf = [0u8; 3];
+        s.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"RFB");
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("c.sock");
+        let l = tokio::net::UnixListener::bind(&path).unwrap();
+        tokio::spawn(async move {
+            let (mut s, _) = l.accept().await.unwrap();
+            s.write_all(b"SPI").await.unwrap();
+        });
+        let t = ConsoleTarget::Socket(path.to_string_lossy().into_owned());
+        let Ok(mut s) = r.open_stream(&t, origin).await else {
+            panic!("socket")
+        };
+        s.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"SPI");
+
+        let t = ConsoleTarget::Socket(dir.path().join("none.sock").to_string_lossy().into_owned());
+        let e = match r.open_stream(&t, origin).await {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("connected to nothing"),
+        };
+        assert!(e.contains("none.sock"), "{e}");
+    }
 
     // TC-111: exit status, stdout, stderr and the time limit.
     #[tokio::test]

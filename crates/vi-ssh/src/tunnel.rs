@@ -38,6 +38,8 @@ pub struct Tunnel {
     target: ConsoleTarget,
     stop: watch::Sender<bool>,
     stats: Arc<Stats>,
+    /// The accept loop; it owns the listener.
+    task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Tunnel {
@@ -52,7 +54,7 @@ impl Tunnel {
         let (stop, stopped) = watch::channel(false);
         let stats = Arc::new(Stats::default());
         tracing::info!(%addr, %target, "console tunnel open");
-        tokio::spawn(accept_loop(
+        let task = tokio::spawn(accept_loop(
             listener,
             runner,
             target.clone(),
@@ -64,6 +66,7 @@ impl Tunnel {
             target,
             stop,
             stats,
+            task: Some(task),
         })
     }
 
@@ -91,8 +94,17 @@ impl Tunnel {
         self.stats.last_error.lock().expect("lock").clone()
     }
 
-    /// Stop listening and end every forwarded connection.
+    /// Stop listening and end every forwarded connection (in the
+    /// background; see [`Tunnel::shutdown`] to wait for it).
     pub fn close(self) {}
+
+    /// Like [`Tunnel::close`], and wait until the port is closed.
+    pub async fn shutdown(mut self) {
+        let _ = self.stop.send(true);
+        if let Some(t) = self.task.take() {
+            let _ = t.await;
+        }
+    }
 }
 
 impl Drop for Tunnel {
@@ -247,14 +259,13 @@ mod tests {
         }
         assert_eq!((t.active(), t.total()), (2, 2));
         let addr = t.local_addr();
-        t.close();
+        t.shutdown().await;
         let mut buf = [0u8; 1];
         let n = tokio::time::timeout(Duration::from_secs(2), c1.read(&mut buf))
             .await
             .expect("connection ended by close")
             .unwrap_or(0);
         assert_eq!(n, 0);
-        tokio::time::sleep(Duration::from_millis(20)).await;
         assert!(TcpStream::connect(addr).await.is_err(), "listener stopped");
     }
 

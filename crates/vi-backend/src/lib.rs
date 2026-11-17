@@ -11,7 +11,7 @@ pub mod parse;
 use std::time::Duration;
 
 use vi_core::config::{Backend, HostConfig};
-use vi_core::model::HostInventory;
+use vi_core::model::{Graphics, HostInventory};
 use vi_ssh::CommandRunner;
 use vi_ssh::prompt::BoxFuture;
 
@@ -28,6 +28,17 @@ pub trait HypervisorBackend: Send + Sync {
         &'a self,
         runner: &'a dyn CommandRunner,
     ) -> BoxFuture<'a, Result<HostInventory, BackendError>>;
+
+    /// The live graphics devices of one domain, read just before a console
+    /// is opened (SPEC-018), so the port is current. A backend without
+    /// consoles reports none.
+    fn graphics<'a>(
+        &'a self,
+        _runner: &'a dyn CommandRunner,
+        _domain: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<Graphics>, BackendError>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
 }
 
 /// The backend configured for `host`.

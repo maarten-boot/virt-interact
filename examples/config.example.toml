@@ -35,6 +35,12 @@ libvirt_uri = "qemu:///system"  # the "localhost (system)" entry
 # virsh_prefix = "sudo -n"      # optional, for the system entry
 session = true                  # also show "localhost (session)": your own VMs
 
+[console]
+# The viewer for VM consoles (v1.1). Unset: "remote-viewer" (virt-viewer),
+# searched on PATH, in /opt/homebrew/bin and /usr/local/bin, and on Windows
+# in "C:\Program Files\VirtViewer*\bin". A full path or another name works.
+# viewer = "remote-viewer"
+
 # One [[hosts]] block per remote host. Only name and host are required.
 
 [[hosts]]
