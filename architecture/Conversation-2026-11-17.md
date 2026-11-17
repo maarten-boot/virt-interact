@@ -69,3 +69,7 @@ TC-106 pass; Plan 6.3 done. Still open: TC-103c (real host and viewer on all pla
 **User:** Pushed the crosscheck fixes.
 
 **Claude:** CI run 44179917484 (`eb173b8`): Linux, macOS and MSRV pass; Windows failed in clippy: the new test helpers `wait_open`, `helper_pid` and `gone` are only used by unix tests (`dead_code`). Marked `#[cfg(unix)]`. (No Windows target on the dev machine; the other new code was reviewed for unix-only parts.)
+
+**User:** Pushed.
+
+**Claude:** CI run 44184621172 (`9f353af`): all 4 jobs green; 145 tests on Linux, macOS and MSRV, 133 on Windows. TC-010 updated. Phase 6 is done in code; open before 1.1: TC-103c (real host and remote-viewer, all platforms) and TC-121 on macOS.
