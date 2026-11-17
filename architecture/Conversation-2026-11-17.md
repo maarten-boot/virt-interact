@@ -64,3 +64,8 @@ TC-106 pass; Plan 6.3 done. Still open: TC-103c (real host and viewer on all pla
 - Both tests were checked against the old code (each fails without its fix).
 - C3, D2: SPEC-018; D1: TC-102 covered; D3: TC-105; D4: Windows `VirtViewer*\bin` folders searched once.
 - 145 tests pass (3 runs); fmt and clippy clean.
+
+## 9. CI fix for Windows (test helpers)
+**User:** Pushed the crosscheck fixes.
+
+**Claude:** CI run 44179917484 (`eb173b8`): Linux, macOS and MSRV pass; Windows failed in clippy: the new test helpers `wait_open`, `helper_pid` and `gone` are only used by unix tests (`dead_code`). Marked `#[cfg(unix)]`. (No Windows target on the dev machine; the other new code was reviewed for unix-only parts.)

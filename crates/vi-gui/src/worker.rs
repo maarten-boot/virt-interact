@@ -959,6 +959,7 @@ mod tests {
     }
 
     /// Wait for the Open event of a console.
+    #[cfg(unix)]
     fn wait_open(rx: &Receiver<Event>) {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
@@ -974,6 +975,7 @@ mod tests {
     }
 
     /// The pid in `pidfile` once the wrapper script has written it.
+    #[cfg(unix)]
     fn helper_pid(pidfile: &std::path::Path) -> String {
         let started = (0..500).any(|_| {
             std::thread::sleep(Duration::from_millis(10));
@@ -983,6 +985,7 @@ mod tests {
         std::fs::read_to_string(pidfile).unwrap().trim().to_string()
     }
 
+    #[cfg(unix)]
     fn gone(pid: &str) -> bool {
         (0..250).any(|_| {
             std::thread::sleep(Duration::from_millis(20));
