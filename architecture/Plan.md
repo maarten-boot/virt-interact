@@ -88,10 +88,10 @@ about.toml       accepted third-party licences (cargo-about; about.hbs is the no
 ### Phase 5: Release v1
 - [x] 5.1 Packaging (SPEC-002 distribution): `scripts/package.sh` builds and checks the archive per platform: Linux tar.gz (built on Ubuntu 22.04), Windows zip (GUI subsystem, no console), macOS universal `.app` in a zip (ad-hoc signed, not notarized). Release profile with thin LTO and stripped symbols. CI packages on every push (TC-120); `.github/workflows/release.yml` tests and packages all platforms for a `v<version>` tag and creates a **draft** GitHub release with the `Changes.md` section (`scripts/release_notes.sh`). Later: MSI, AppImage/deb, notarization. (2026-11-14)
 - [x] 5.1a Crosscheck 2026-11-14-03 fixes: MIT `LICENSE`; `THIRD_PARTY_LICENSES.html` in every archive (cargo-about, accepted list in `about.toml`); Windows shows `--help`/`--version`/start-up errors in a small window; CI Linux on ubuntu-22.04 like the release; app icon (window, Windows exe, macOS bundle, Linux `.desktop`). (2026-11-14)
-- [ ] 5.2 Release 1.0.0:
+- [x] 5.2 Release 1.0.0 (tagged 2026-11-16, published 2026-11-17):
   - [x] version 1.0.0 in `Cargo.toml`; `## 1.0.0` in `Changes.md` with user-facing release notes (features, downloads, known limitations), the development history below it (2026-11-16);
   - [x] release crosscheck (2026-11-16-01; R1/R2 applied);
-  - [ ] the user runs `release.yml` via "Run workflow" (optional), pushes tag `v1.0.0`, tries the draft release's archives on each platform (TC-121) and publishes it.
+  - [x] the user runs `release.yml` via "Run workflow" (optional), pushes tag `v1.0.0`, tries the draft release's archives on each platform (TC-121) and publishes it.
 
 ### Phase 6: v1.1 remote viewing (SPEC-018)
 - [x] 6.0 New app icon from the user's logo (a blue "V" on a green rounded square): master `packaging/icon/logo.png`, all sizes made by `scripts/make_icon.py` (2026-11-16).

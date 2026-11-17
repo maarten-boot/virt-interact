@@ -5,9 +5,10 @@ A desktop GUI (Windows, Linux, macOS) that connects to remote hosts over SSH
 (libvirt/virsh first). Remote VNC/SPICE viewing over the same SSH connection
 follows in v1.1.
 
-Status: version 1.0.0, the read-only inventory (see `Changes.md` for what
-it does and its known limitations). Next: VNC/SPICE consoles over SSH
-(1.1). See `architecture/Spec.md` and `architecture/Plan.md`.
+Status: version 1.0.0 is released (GitHub releases page): the read-only
+inventory (see `Changes.md` for what it does and its known limitations).
+Next: VNC/SPICE consoles over SSH (1.1). See `architecture/Spec.md` and
+`architecture/Plan.md`.
 
 ## Install
 
