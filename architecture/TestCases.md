@@ -146,8 +146,9 @@ Each test case is traced to a Spec item.
 ## SPEC-018: Remote viewing (v1.1)
 | ID | Type | Description | Test location | Status |
 |----|------|-------------|---------------|--------|
-| TC-100 | U | Builds the viewer URL from graphics info (vnc and spice, TCP and socket). Fallback: the VNC display number from `domdisplay` (`:1` = 5901); the SPICE port is used as is. | _tbd_ | planned |
-| TC-101 | U | The local listener binds to 127.0.0.1 only. | _tbd_ | planned |
-| TC-102 | H | A tunnel to the test VM's VNC port gives an RFB handshake. | _tbd_ | planned |
+| TC-100 | U | The console target from the live graphics: TCP host and port (a wildcard `0.0.0.0`/`::` or default listen becomes `127.0.0.1` on the host; a specific or network address is kept; IPv6 brackets removed) or the unix socket path; refused with a reason for an unsupported kind, no port, TLS-only, an unknown socket path or network address. Then (6.2) the viewer URL; fallback: the VNC display number from `domdisplay` (`:1` = 5901); the SPICE port is used as is. | `vi-core model::tests::console_targets` | target: pass (2026-11-17); URL: planned (6.2) |
+| TC-101 | U | The local listener binds to 127.0.0.1 only, on a random port; several connections are forwarded at once; closing the tunnel ends them and stops the listener; a refused stream closes the local connection and is reported (`last_error`); a runner without forwarding refuses clearly. | `vi-ssh tunnel::tests` | pass (2026-11-17) |
+| TC-102a | I | A tunnel through a real SSH session (in-process russh server): `direct-tcpip` to a TCP echo "console" with two connections (5000 bytes round trip), `direct-streamlocal` to a unix socket (unix only), and a target with nothing listening gives an error naming it. | `vi-ssh tests/tunnel.rs` | pass (2026-11-17) |
+| TC-102 | H | A tunnel to the test VM's VNC port gives an RFB handshake. | `cargo run -p vi-ssh --example …` (6.2) | planned |
 | TC-103 | M | remote-viewer opens the console; the tunnel closes when the viewer exits. | — | planned |
-| TC-104 | U | Graphics with `listen type="none"` give "not reachable remotely", and no tunnel is offered; the `domdisplay` error "No graphical display found" is not reported as a host error (fixture libvirt-10.0.0). | _tbd_ | planned |
+| TC-104 | U | Graphics with `listen type="none"` give "not reachable remotely" (`console_target`, pass 2026-11-17), and no tunnel is offered (6.2); the `domdisplay` error "No graphical display found" is not reported as a host error (fixture libvirt-10.0.0). | _tbd_ | planned |

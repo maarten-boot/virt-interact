@@ -2,8 +2,12 @@
 //! tested without a real host ([`MockRunner`]).
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::time::Duration;
+
+use tokio::io::{AsyncRead, AsyncWrite};
+use vi_core::model::ConsoleTarget;
 
 use crate::error::SshError;
 use crate::prompt::BoxFuture;
@@ -47,9 +51,29 @@ impl CommandOutput {
     }
 }
 
+/// A byte stream to a console on the host (SPEC-018).
+pub trait ConsoleStream: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> ConsoleStream for T {}
+
 /// Something that runs a command line on a remote host.
 pub trait CommandRunner: Send + Sync {
     fn run<'a>(&'a self, command: &'a str) -> BoxFuture<'a, Result<CommandOutput, SshError>>;
+
+    /// Open a stream to `target` as seen from the host, for a console
+    /// tunnel (SPEC-018). `origin` is the local client being forwarded.
+    /// Runners without forwarding refuse.
+    fn open_stream<'a>(
+        &'a self,
+        target: &'a ConsoleTarget,
+        _origin: SocketAddr,
+    ) -> BoxFuture<'a, Result<Box<dyn ConsoleStream>, SshError>> {
+        Box::pin(async move {
+            Err(SshError::Forward {
+                target: target.to_string(),
+                reason: "this connection cannot forward".into(),
+            })
+        })
+    }
 }
 
 /// Canned responses per exact command line; records every command it gets.

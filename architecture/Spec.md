@@ -220,9 +220,15 @@ Scope of an error:
 - The app reads the live graphics listen address and port, or the unix socket, from the live XML.
   - `virsh domdisplay` is only a fallback. For VNC it reports a display number (`vnc://127.0.0.1:1` means port 5901); for SPICE it reports the real port (`spice://127.0.0.1:5907`).
   - If the graphics have `listen type="none"` (for example, SPICE with local GL), the console is marked "not reachable remotely" and the console action is disabled. In that case `virsh domdisplay` fails with `error: No graphical display found`; this is not treated as a host error.
-- It opens a local listener on `127.0.0.1` on a random free port and forwards connections over the existing SSH session:
+- The forward target follows from the live graphics (`Graphics::console_target`):
+  - a TCP listen address as is; a wildcard (`0.0.0.0`, `::`) or the default listen as `127.0.0.1` on the host; a network listen by its resolved address;
+  - a unix socket by its path;
+  - refused, with the reason shown: kinds other than VNC and SPICE, no port (domain not running), TLS-only (no plain port; not supported yet), an unknown socket path or network address.
+- It opens a local listener on `127.0.0.1` on a random free port and forwards connections over the existing SSH session (`vi_ssh::Tunnel`):
   - `direct-tcpip` for a TCP listen address;
   - `direct-streamlocal` for a unix socket listen.
+  - Several connections at once are forwarded (SPICE opens one per channel). Closing the tunnel stops the listener and ends every connection. A connection the host refuses is closed locally and its error kept for the GUI.
+  - The port is reachable only from this machine, but by any local process while the tunnel is open; a console password still applies.
 - It launches an external viewer (default `remote-viewer`; the path is configurable) with `vnc://127.0.0.1:<port>` or `spice://127.0.0.1:<port>`.
 - The tunnel closes when the viewer exits or the user disconnects.
 - If the console has a password, the viewer asks for it. The app does not read or store console passwords.

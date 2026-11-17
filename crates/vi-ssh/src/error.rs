@@ -63,6 +63,9 @@ pub enum SshError {
         tried: Vec<String>,
     },
 
+    #[error("cannot open the console tunnel to {target}: {reason}")]
+    Forward { target: String, reason: String },
+
     #[error("ssh: {0}")]
     Protocol(String),
 }
@@ -96,7 +99,7 @@ impl SshError {
             | SshError::HostCertificate
             | SshError::KnownHosts { .. } => SshErrorKind::HostKey,
             SshError::AuthFailed { .. } => SshErrorKind::Authentication,
-            SshError::Protocol(_) => SshErrorKind::Other,
+            SshError::Forward { .. } | SshError::Protocol(_) => SshErrorKind::Other,
         }
     }
 }

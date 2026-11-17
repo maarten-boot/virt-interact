@@ -9,10 +9,12 @@ pub mod runner;
 pub mod secret;
 pub mod session;
 pub mod sshconfig;
+pub mod tunnel;
 
 pub use error::{SshError, SshErrorKind};
 pub use prompt::{HostKeyPrompt, NoPrompt, Prompter, ScriptedPrompter};
-pub use runner::{CommandOutput, CommandRunner, MockRunner};
+pub use runner::{CommandOutput, CommandRunner, ConsoleStream, MockRunner};
 pub use secret::Secret;
 pub use session::{ConnectOptions, SshSession};
 pub use sshconfig::{ResolvedHost, SshConfig, resolve};
+pub use tunnel::Tunnel;

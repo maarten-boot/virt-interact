@@ -58,6 +58,61 @@ impl server::Handler for TestServer {
         Ok(())
     }
 
+    /// `direct-tcpip`: connect to the target from the "host" (this process)
+    /// and copy bytes both ways; refuse if the connect fails.
+    async fn channel_open_direct_tcpip(
+        &mut self,
+        channel: Channel<Msg>,
+        host_to_connect: &str,
+        port_to_connect: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: server::ChannelOpenHandle,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        let addr = format!("{host_to_connect}:{port_to_connect}");
+        match tokio::net::TcpStream::connect(addr).await {
+            Ok(mut sock) => {
+                reply.accept().await;
+                tokio::spawn(async move {
+                    let mut ch = channel.into_stream();
+                    let _ = tokio::io::copy_bidirectional(&mut sock, &mut ch).await;
+                });
+            }
+            Err(_) => reply.reject(russh::ChannelOpenFailure::ConnectFailed).await,
+        }
+        Ok(())
+    }
+
+    /// `direct-streamlocal`: the same for a unix socket (unix only).
+    async fn channel_open_direct_streamlocal(
+        &mut self,
+        channel: Channel<Msg>,
+        socket_path: &str,
+        reply: server::ChannelOpenHandle,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        #[cfg(unix)]
+        match tokio::net::UnixStream::connect(socket_path).await {
+            Ok(mut sock) => {
+                reply.accept().await;
+                tokio::spawn(async move {
+                    let mut ch = channel.into_stream();
+                    let _ = tokio::io::copy_bidirectional(&mut sock, &mut ch).await;
+                });
+            }
+            Err(_) => reply.reject(russh::ChannelOpenFailure::ConnectFailed).await,
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (channel, socket_path);
+            reply
+                .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                .await;
+        }
+        Ok(())
+    }
+
     async fn exec_request(
         &mut self,
         channel: ChannelId,

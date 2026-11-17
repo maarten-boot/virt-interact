@@ -299,6 +299,63 @@ pub enum Listen {
     None,
 }
 
+/// Where a console is forwarded to, as seen from the VM host (SPEC-018).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConsoleTarget {
+    /// TCP: the host connects to `host:port` (`direct-tcpip`).
+    Tcp { host: String, port: u16 },
+    /// A unix socket on the host (`direct-streamlocal`).
+    Socket(String),
+}
+
+impl std::fmt::Display for ConsoleTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConsoleTarget::Tcp { host, port } if host.contains(':') => write!(f, "[{host}]:{port}"),
+            ConsoleTarget::Tcp { host, port } => write!(f, "{host}:{port}"),
+            ConsoleTarget::Socket(p) => write!(f, "unix:{p}"),
+        }
+    }
+}
+
+/// Console kinds an external viewer can open (SPEC-018).
+pub const CONSOLE_KINDS: [&str; 2] = ["vnc", "spice"];
+
+impl Graphics {
+    /// What to forward to for this console, or why it cannot be opened.
+    /// Read from the live XML of a running domain (SPEC-018): a wildcard or
+    /// default listen address is reached as `127.0.0.1` on the host.
+    pub fn console_target(&self) -> Result<ConsoleTarget, String> {
+        if !CONSOLE_KINDS.contains(&self.kind.as_str()) {
+            return Err(format!("{} consoles are not supported", self.kind));
+        }
+        let address = match &self.listen {
+            Listen::None => return Err("not reachable remotely (listen type none)".into()),
+            Listen::Socket(Some(p)) => return Ok(ConsoleTarget::Socket(p.clone())),
+            Listen::Socket(None) => return Err("socket path unknown (domain not running?)".into()),
+            Listen::Address(a) => a.clone(),
+            Listen::Network {
+                address: Some(a), ..
+            } => Some(a.clone()),
+            Listen::Network { address: None, .. } => {
+                return Err("listen address unknown (domain not running?)".into());
+            }
+        };
+        let Some(port) = self.port else {
+            return Err(if self.tls_port.is_some() {
+                "TLS-only consoles are not supported yet".into()
+            } else {
+                "no port (domain not running?)".into()
+            });
+        };
+        let host = match address.as_deref().map(str::trim) {
+            None | Some("" | "0.0.0.0" | "::" | "[::]") => "127.0.0.1".to_string(),
+            Some(a) => a.trim_start_matches('[').trim_end_matches(']').to_string(),
+        };
+        Ok(ConsoleTarget::Tcp { host, port })
+    }
+}
+
 impl Listen {
     pub fn describe(&self) -> String {
         match self {
@@ -370,6 +427,99 @@ mod tests {
         assert_eq!(g("http://microsoft.com/win/10").guest_os(), Some("win/10"));
         assert_eq!(g("odd-id").guest_os(), Some("odd-id"));
         assert_eq!(General::default().guest_os(), None);
+    }
+
+    // TC-100 / TC-104: console targets from the live graphics (SPEC-018).
+    #[test]
+    fn console_targets() {
+        let g = |kind: &str, listen: Listen, port: Option<u16>, tls: Option<u16>| Graphics {
+            kind: kind.into(),
+            listen,
+            port,
+            tls_port: tls,
+            autoport: true,
+        };
+        let tcp = |h: &str, p: u16| {
+            Ok(ConsoleTarget::Tcp {
+                host: h.into(),
+                port: p,
+            })
+        };
+        let addr = |a: &str| Listen::Address(Some(a.into()));
+        assert_eq!(
+            g("vnc", addr("127.0.0.1"), Some(5900), None).console_target(),
+            tcp("127.0.0.1", 5900)
+        );
+        assert_eq!(
+            g("spice", addr("0.0.0.0"), Some(5901), None).console_target(),
+            tcp("127.0.0.1", 5901)
+        );
+        assert_eq!(
+            g("vnc", addr("::"), Some(5902), None).console_target(),
+            tcp("127.0.0.1", 5902)
+        );
+        assert_eq!(
+            g("vnc", Listen::Address(None), Some(5903), None).console_target(),
+            tcp("127.0.0.1", 5903)
+        );
+        assert_eq!(
+            g("vnc", addr("192.0.2.10"), Some(5904), None).console_target(),
+            tcp("192.0.2.10", 5904)
+        );
+        assert_eq!(
+            g("vnc", addr("[2001:db8::1]"), Some(5905), None).console_target(),
+            tcp("2001:db8::1", 5905)
+        );
+        let net = Listen::Network {
+            network: Some("lan".into()),
+            address: Some("192.0.2.11".into()),
+        };
+        assert_eq!(
+            g("vnc", net, Some(5906), None).console_target(),
+            tcp("192.0.2.11", 5906)
+        );
+        assert_eq!(
+            g(
+                "spice",
+                Listen::Socket(Some("/run/x.sock".into())),
+                None,
+                None
+            )
+            .console_target(),
+            Ok(ConsoleTarget::Socket("/run/x.sock".into()))
+        );
+        let err = |gr: Graphics, part: &str| {
+            let e = gr.console_target().unwrap_err();
+            assert!(e.contains(part), "{e}");
+        };
+        err(g("spice", Listen::None, None, None), "not reachable");
+        err(
+            g("vnc", Listen::Socket(None), None, None),
+            "socket path unknown",
+        );
+        err(
+            g(
+                "vnc",
+                Listen::Network {
+                    network: Some("lan".into()),
+                    address: None,
+                },
+                Some(5900),
+                None,
+            ),
+            "address unknown",
+        );
+        err(g("vnc", addr("127.0.0.1"), None, None), "no port");
+        err(g("spice", addr("127.0.0.1"), None, Some(5901)), "TLS-only");
+        err(
+            g("rdp", addr("127.0.0.1"), Some(3389), None),
+            "rdp consoles are not supported",
+        );
+        assert_eq!(
+            tcp("2001:db8::1", 1).unwrap().to_string(),
+            "[2001:db8::1]:1"
+        );
+        assert_eq!(ConsoleTarget::Socket("/s".into()).to_string(), "unix:/s");
     }
 
     #[test]

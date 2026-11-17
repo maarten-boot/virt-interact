@@ -6,6 +6,7 @@
 //! network timeout), and on acceptance the key is recorded and the
 //! connection is made again.
 
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,11 +18,12 @@ use russh::{ChannelMsg, Disconnect};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::timeout;
 use vi_core::config::SshSettings;
+use vi_core::model::ConsoleTarget;
 
 use crate::error::SshError;
 use crate::known_hosts::{self, HostKeyStatus};
 use crate::prompt::{BoxFuture, HostKeyPrompt, Prompter};
-use crate::runner::{CommandOutput, CommandRunner};
+use crate::runner::{CommandOutput, CommandRunner, ConsoleStream};
 use crate::sshconfig::ResolvedHost;
 
 /// Options for [`SshSession::connect`].
@@ -636,6 +638,42 @@ impl SshSession {
 impl CommandRunner for SshSession {
     fn run<'a>(&'a self, command: &'a str) -> BoxFuture<'a, Result<CommandOutput, SshError>> {
         Box::pin(self.exec(command))
+    }
+
+    fn open_stream<'a>(
+        &'a self,
+        target: &'a ConsoleTarget,
+        origin: SocketAddr,
+    ) -> BoxFuture<'a, Result<Box<dyn ConsoleStream>, SshError>> {
+        Box::pin(async move {
+            let what = format!("opening a tunnel to {target} on {}", self.host.name);
+            let opened = with_timeout(self.command_timeout, &what, async {
+                match target {
+                    ConsoleTarget::Tcp { host, port } => {
+                        self.handle
+                            .channel_open_direct_tcpip(
+                                host.as_str(),
+                                u32::from(*port),
+                                origin.ip().to_string(),
+                                u32::from(origin.port()),
+                            )
+                            .await
+                    }
+                    ConsoleTarget::Socket(path) => {
+                        self.handle
+                            .channel_open_direct_streamlocal(path.as_str())
+                            .await
+                    }
+                }
+            })
+            .await?;
+            let channel = opened.map_err(|e| SshError::Forward {
+                target: target.to_string(),
+                reason: e.to_string(),
+            })?;
+            tracing::debug!(host = %self.host.name, %target, "tunnel channel open");
+            Ok(Box::new(channel.into_stream()) as Box<dyn ConsoleStream>)
+        })
     }
 }
 
