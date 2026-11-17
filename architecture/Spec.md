@@ -217,7 +217,7 @@ Scope of an error:
 
 ### SPEC-018: Remote console through SSH tunnel (v1.1)
 - For a running (or paused) domain with VNC or SPICE graphics, the user can open a console: the graphics table in the VM details has an "Open console" button per device. When it cannot be opened, the button is disabled and the reason is shown next to it (VM not running, not reachable remotely, …).
-- On "Open console", the app reads the domain's live XML again (`virsh dumpxml`, allowlisted, read-only), so the port is current even when the shown inventory is cached. It uses the kept connection of the host, or connects (prompts as for a refresh); the host's inventory status does not change.
+- On "Open console", the app reads the domain's live XML again (`virsh dumpxml`, allowlisted, read-only), so the port is current even when the shown inventory is cached. It uses the kept connection of the host, or connects (prompts as for a refresh); the host's inventory status does not change. If the kept connection has broken, the app reconnects once.
   - `virsh domdisplay` is not used: the live XML of a running domain always has the port (also with autoport). For VNC `domdisplay` would report a display number (`vnc://127.0.0.1:1` means port 5901), for SPICE the real port.
   - If the graphics have `listen type="none"` (for example, SPICE with local GL), the console is marked "not reachable remotely" and the console action is disabled. (`virsh domdisplay` would fail with `error: No graphical display found`.)
 - The forward target follows from the live graphics (`Graphics::console_target`):
@@ -234,7 +234,9 @@ Scope of an error:
   - Not found: an error with the install hint for the platform (Linux: the `virt-viewer` package; macOS: MacPorts `sudo port install virt-viewer`, as Homebrew has no formula; Windows: `winget install RedHat.VirtViewer` or the virt-viewer MSI) and the config key.
 - The tunnel lives as long as the viewer:
   - When the viewer exits, the tunnel closes. A viewer that fails (non-zero exit) is reported with its last stderr line and any tunnel error.
-  - "Close console" (the same button while open) stops the viewer and closes the tunnel. On Linux/macOS the viewer runs in its own process group; closing sends it SIGTERM, then SIGKILL after 2 s, so the helpers of a wrapper script stop too. The same happens when the app is closed, or the host is edited or removed, or the config is reloaded.
+  - "Close console" (the same button while open) stops the viewer and closes the tunnel. On Linux/macOS the viewer runs in its own process group; closing sends the group SIGTERM, and SIGKILL to what is left of it after 2 s, so the helpers of a wrapper script stop too. The same happens when the host is edited or removed, or the config is reloaded.
+  - While the viewer is stopping, the button shows "closing…" and the same console cannot be opened again; once it has stopped it can.
+  - When the app is closed, the viewer's group gets SIGTERM and the viewer is killed at once (no 2 s wait).
   - Errors appear as a message naming the VM and host. One console per graphics device at a time.
 - If the console has a password, the viewer asks for it. The app does not read or store console passwords.
 

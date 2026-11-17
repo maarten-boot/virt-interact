@@ -402,7 +402,11 @@ impl App {
         if let Some(w) = &self.worker {
             w.close_console(key);
         }
-        self.consoles.remove(key);
+        // Shown until the worker reports Closed: the same console cannot be
+        // opened again while its viewer is still stopping.
+        if let Some(state) = self.consoles.get_mut(key) {
+            *state = ConsoleState::Closing;
+        }
     }
 
     pub fn refresh_all(&mut self) {
@@ -1129,6 +1133,10 @@ impl App {
         match self.consoles.get(&key) {
             Some(ConsoleState::Opening) => {
                 ui.label(RichText::new("opening…").color(weak));
+                None
+            }
+            Some(ConsoleState::Closing) => {
+                ui.label(RichText::new("closing…").color(weak));
                 None
             }
             Some(ConsoleState::Open { url }) => self

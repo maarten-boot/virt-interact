@@ -186,8 +186,12 @@ impl SessionTable {
 
 type Sessions = Arc<Mutex<SessionTable>>;
 
-/// Open consoles; sending on (or dropping) the sender closes one.
-type Consoles = Arc<Mutex<HashMap<ConsoleKey, oneshot::Sender<()>>>>;
+/// Consoles whose task is running; sending on (or dropping) the sender
+/// closes one. Closing takes the sender out but keeps the key until the
+/// task has ended, so the same console cannot be opened again while the
+/// old viewer is still stopping (and the old task cannot remove the entry
+/// of a new one).
+type Consoles = Arc<Mutex<HashMap<ConsoleKey, Option<oneshot::Sender<()>>>>>;
 
 pub struct Worker {
     rt: tokio::runtime::Runtime,
@@ -264,16 +268,23 @@ impl Worker {
     /// consoles are closed.
     pub fn forget(&self, host: &str) {
         self.sessions.lock().expect("lock").forget(host);
-        self.consoles
+        for (_, close) in self
+            .consoles
             .lock()
             .expect("lock")
-            .retain(|k, _| k.host != host);
+            .iter_mut()
+            .filter(|(k, _)| k.host == host)
+        {
+            close.take();
+        }
     }
 
     /// Drop all connections and close all consoles (config reloaded).
     pub fn forget_all(&self) {
         self.sessions.lock().expect("lock").forget_all();
-        self.consoles.lock().expect("lock").clear();
+        for close in self.consoles.lock().expect("lock").values_mut() {
+            close.take();
+        }
     }
 
     fn ctx(&self) -> TaskCtx {
@@ -287,7 +298,7 @@ impl Worker {
         }
     }
 
-    /// Is this console opening or open?
+    /// Is this console opening, open or still stopping?
     pub fn console_open(&self, key: &ConsoleKey) -> bool {
         self.consoles.lock().expect("lock").contains_key(key)
     }
@@ -308,7 +319,7 @@ impl Worker {
             if c.contains_key(&key) {
                 return false;
             }
-            c.insert(key.clone(), close);
+            c.insert(key.clone(), Some(close));
         }
         let ctx = self.ctx();
         let consoles = self.consoles.clone();
@@ -332,7 +343,13 @@ impl Worker {
 
     /// Close a console: the viewer is stopped and the tunnel closed.
     pub fn close_console(&self, key: &ConsoleKey) {
-        if let Some(tx) = self.consoles.lock().expect("lock").remove(key) {
+        if let Some(tx) = self
+            .consoles
+            .lock()
+            .expect("lock")
+            .get_mut(key)
+            .and_then(Option::take)
+        {
             let _ = tx.send(());
         }
     }
@@ -531,13 +548,17 @@ impl TaskCtx {
         let tunnel_error = tunnel.last_error();
         let Some(status) = status else {
             // Closed by the user (or the host was forgotten): ask the viewer
-            // to stop, then force it.
-            drop(group);
+            // and its helpers to stop, then force them.
+            group.signal(Signal::Term);
             if tokio::time::timeout(Duration::from_secs(2), child.wait())
                 .await
                 .is_err()
             {
+                group.signal(Signal::Kill);
                 let _ = child.kill().await;
+            } else {
+                // The viewer has stopped; give helpers the same time.
+                group.wait_or_kill(Duration::from_secs(2)).await;
             }
             tunnel.shutdown().await;
             return Ok(());
@@ -569,18 +590,59 @@ impl TaskCtx {
 /// the viewer itself is also killed on drop (`kill_on_drop`).
 struct ViewerGroup(#[cfg_attr(not(unix), allow(dead_code))] Option<u32>);
 
-impl Drop for ViewerGroup {
-    fn drop(&mut self) {
-        // The group was created for the viewer (process_group(0)), so its
-        // id is the viewer's pid. An already empty group is fine.
-        #[cfg(unix)]
-        if let Some(pid) = self
-            .0
+#[derive(Clone, Copy)]
+enum Signal {
+    Term,
+    Kill,
+}
+
+impl ViewerGroup {
+    /// The group was created for the viewer (process_group(0)), so its id
+    /// is the viewer's pid.
+    #[cfg(unix)]
+    fn pid(&self) -> Option<rustix::process::Pid> {
+        self.0
             .and_then(|p| i32::try_from(p).ok())
             .and_then(rustix::process::Pid::from_raw)
-        {
-            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::TERM);
+    }
+
+    /// Signal the whole group (unix; an empty group is fine).
+    fn signal(&self, sig: Signal) {
+        #[cfg(unix)]
+        if let Some(pid) = self.pid() {
+            let sig = match sig {
+                Signal::Term => rustix::process::Signal::TERM,
+                Signal::Kill => rustix::process::Signal::KILL,
+            };
+            let _ = rustix::process::kill_process_group(pid, sig);
         }
+        #[cfg(not(unix))]
+        let _ = sig;
+    }
+
+    /// Wait until the group is empty, at most `limit`, then SIGKILL it.
+    async fn wait_or_kill(&self, limit: Duration) {
+        #[cfg(unix)]
+        {
+            let Some(pid) = self.pid() else { return };
+            let end = tokio::time::Instant::now() + limit;
+            while tokio::time::Instant::now() < end {
+                if rustix::process::test_kill_process_group(pid).is_err() {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            self.signal(Signal::Kill);
+        }
+        #[cfg(not(unix))]
+        let _ = limit;
+    }
+}
+
+impl Drop for ViewerGroup {
+    fn drop(&mut self) {
+        // An already empty group is fine.
+        self.signal(Signal::Term);
     }
 }
 
@@ -896,18 +958,58 @@ mod tests {
         assert!(rx.try_iter().all(|e| !matches!(e, Event::Status { .. })));
     }
 
-    // TC-103: Close stops a viewer that would run for a long time; forget
-    // (host removed) does the same.
+    /// Wait for the Open event of a console.
+    fn wait_open(rx: &Receiver<Event>) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if let Event::Console {
+                state: ConsoleState::Open { .. },
+                ..
+            } = rx.recv_timeout(left).expect("console event")
+            {
+                return;
+            }
+        }
+    }
+
+    /// The pid in `pidfile` once the wrapper script has written it.
+    fn helper_pid(pidfile: &std::path::Path) -> String {
+        let started = (0..500).any(|_| {
+            std::thread::sleep(Duration::from_millis(10));
+            std::fs::read_to_string(pidfile).is_ok_and(|s| s.ends_with('\n'))
+        });
+        assert!(started, "helper not started");
+        std::fs::read_to_string(pidfile).unwrap().trim().to_string()
+    }
+
+    fn gone(pid: &str) -> bool {
+        (0..250).any(|_| {
+            std::thread::sleep(Duration::from_millis(20));
+            !std::process::Command::new("kill")
+                .args(["-0", pid])
+                .status()
+                .unwrap()
+                .success()
+        })
+    }
+
+    // TC-103: Close stops a viewer that would run for a long time, and the
+    // helpers of a wrapper script, also when they ignore SIGTERM (SIGKILL to
+    // the group after 2 s); forget (host removed) does the same.
     #[cfg(unix)]
     #[test]
     fn close_console_stops_the_viewer() {
         let (w, rx, _) = worker();
         let d = tempfile::tempdir().unwrap();
-        // A wrapper script whose helper must stop too.
+        // A wrapper script and its helper, both ignoring SIGTERM.
         let pidfile = d.path().join("helper.pid");
         let v = script(
             d.path(),
-            &format!("sleep 30 & echo $! > '{}'; wait", pidfile.display()),
+            &format!(
+                "trap '' TERM; sleep 30 & echo $! > '{}'; wait",
+                pidfile.display()
+            ),
         );
         let start = Instant::now();
         w.open_console(
@@ -916,17 +1018,7 @@ mod tests {
             key("gfx2"),
             Ok(v.clone()),
         );
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            if let Event::Console {
-                state: ConsoleState::Open { .. },
-                ..
-            } = rx.recv_timeout(left).unwrap()
-            {
-                break;
-            }
-        }
+        wait_open(&rx);
         assert!(
             !w.open_console(
                 host("gfx2"),
@@ -936,39 +1028,78 @@ mod tests {
             ),
             "already open"
         );
-        // The wrapper has started its helper.
-        let started = (0..500).any(|_| {
-            std::thread::sleep(Duration::from_millis(10));
-            std::fs::read_to_string(&pidfile).is_ok_and(|s| s.ends_with('\n'))
-        });
-        assert!(started, "helper not started");
+        let helper = helper_pid(&pidfile);
         w.close_console(&key("gfx2"));
         assert_eq!(
             console_states(&rx).last(),
             Some(&ConsoleState::Closed { error: None })
         );
-        let helper = std::fs::read_to_string(&pidfile)
-            .unwrap()
-            .trim()
-            .to_string();
-        let gone = (0..100).any(|_| {
-            std::thread::sleep(Duration::from_millis(20));
-            !std::process::Command::new("kill")
-                .args(["-0", &helper])
-                .status()
-                .unwrap()
-                .success()
-        });
-        assert!(gone, "helper {helper} of the viewer still runs");
+        assert!(gone(&helper), "helper {helper} of the viewer still runs");
         assert!(start.elapsed() < Duration::from_secs(10));
 
+        // Only the helper ignores SIGTERM: the viewer stops at once, the
+        // helper is killed after 2 s. Here the host is forgotten.
+        std::fs::remove_file(&pidfile).unwrap();
+        let v = script(
+            d.path(),
+            &format!(
+                "(trap '' TERM; exec sleep 30) & echo $! > '{}'; wait",
+                pidfile.display()
+            ),
+        );
         w.open_console(host("gfx2"), SshSettings::default(), key("gfx2"), Ok(v));
-        std::thread::sleep(Duration::from_millis(200));
+        wait_open(&rx);
+        let helper = helper_pid(&pidfile);
         w.forget("gfx2");
         assert!(matches!(
             console_states(&rx).last(),
             Some(ConsoleState::Closed { .. })
         ));
+        assert!(gone(&helper), "helper {helper} still runs after forget");
+    }
+
+    // C1 of crosscheck 2026-11-17-01: a console cannot be opened again while
+    // its viewer is still stopping; once Closed it opens normally and is not
+    // closed by the end of the old task.
+    #[cfg(unix)]
+    #[test]
+    fn reopen_waits_until_the_old_viewer_stopped() {
+        let (w, rx, _) = worker();
+        let d = tempfile::tempdir().unwrap();
+        // Stops 0.5 s after SIGTERM.
+        let v = script(d.path(), "trap 'sleep 0.5; exit 0' TERM; sleep 30 & wait");
+        let open = |w: &Worker| {
+            w.open_console(
+                host("gfx4"),
+                SshSettings::default(),
+                key("gfx4"),
+                Ok(v.clone()),
+            )
+        };
+        assert!(open(&w));
+        wait_open(&rx);
+        w.close_console(&key("gfx4"));
+        assert!(!open(&w), "reopened while the old viewer is stopping");
+        assert!(w.console_open(&key("gfx4")));
+        assert!(matches!(
+            console_states(&rx).last(),
+            Some(ConsoleState::Closed { .. })
+        ));
+        assert!(!w.console_open(&key("gfx4")));
+        assert!(open(&w));
+        wait_open(&rx);
+        // Still open a while later (the old task did not close it).
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(w.console_open(&key("gfx4")));
+        assert!(rx.try_iter().all(|e| !matches!(
+            e,
+            Event::Console {
+                state: ConsoleState::Closed { .. },
+                ..
+            }
+        )));
+        w.close_console(&key("gfx4"));
+        console_states(&rx);
     }
 
     // TC-103: failures become a Closed error: no viewer, the viewer fails

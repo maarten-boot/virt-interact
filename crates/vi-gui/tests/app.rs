@@ -598,6 +598,10 @@ fn console_states_in_the_app() {
         assert_eq!(app.consoles.get(&key), Some(&state));
         frame(&mut app, &ctx);
     }
+    // Close: "closing…" until the worker reports Closed.
+    app.close_console(&key);
+    assert_eq!(app.consoles.get(&key), Some(&ConsoleState::Closing));
+    frame(&mut app, &ctx);
     app.handle(Event::Console {
         key: key.clone(),
         state: ConsoleState::Closed {

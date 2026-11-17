@@ -49,3 +49,18 @@ Added `examples/console-check.rs` (find the viewer and run `--version`; or open 
 - macOS: MacPorts installed `virt-viewer` (about 15 minutes); found at `/opt/local/bin/remote-viewer`, version 11.0.
 - Windows: MSI (checksum matched) installed to `Program Files\VirtViewer v11.0-256\bin`, found by the Program Files search (not on `PATH`), version 11.0-256.
 TC-106 pass; Plan 6.3 done. Still open: TC-103c (real host and viewer on all platforms), TC-121 on macOS.
+
+## 7. Crosscheck of phase 6
+**User:** Pushed; start the crosscheck.
+
+**Claude:** `architecture/Crosscheck-2026-11-17-01.md`: fmt, clippy clean, 144 tests pass. SPEC-018 matches the code except: C1 a reopen race (closing removes the console from the worker's table before its task ends; a quick reopen gets its handle dropped by the old task), C2 SIGKILL after 2 s reaches only the viewer, not its process group, C3 Spec wording on app exit; doc fixes D1 (TC-102 stale), D2 (reconnect once not in the Spec), D3 (TC-105 wording), D4 (Windows dirs searched twice). Fixes proposed; waiting for the user's OK.
+
+## 8. Crosscheck fixes
+**User:** Apply C1–C3 and D1–D4.
+
+**Claude:** Applied (details in the crosscheck's Resolution):
+- C1: a console's key stays in the worker's table until its task has ended; reopening is refused meanwhile and the app shows "closing…". New test `reopen_waits_until_the_old_viewer_stopped`.
+- C2: the viewer's process group gets SIGKILL after 2 s (also when only helpers are left). `close_console_stops_the_viewer` now uses a wrapper and helper that ignore SIGTERM.
+- Both tests were checked against the old code (each fails without its fix).
+- C3, D2: SPEC-018; D1: TC-102 covered; D3: TC-105; D4: Windows `VirtViewer*\bin` folders searched once.
+- 145 tests pass (3 runs); fmt and clippy clean.

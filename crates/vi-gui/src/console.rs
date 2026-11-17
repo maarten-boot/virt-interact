@@ -25,6 +25,8 @@ pub enum ConsoleState {
     Opening,
     /// The viewer runs; it connects to `url` (the local end of the tunnel).
     Open { url: String },
+    /// Close was asked; the viewer is stopping (set by the app only).
+    Closing,
     /// Ended: the viewer exited or was closed. `error` if it failed.
     Closed { error: Option<String> },
 }
@@ -109,9 +111,13 @@ fn windows_dirs() -> Vec<PathBuf> {
         let Some(base) = std::env::var_os(var) else {
             continue;
         };
-        dirs.extend(virt_viewer_dirs(Path::new(&base)));
+        for d in virt_viewer_dirs(Path::new(&base)) {
+            // ProgramFiles and ProgramW6432 are usually the same folder.
+            if !dirs.contains(&d) {
+                dirs.push(d);
+            }
+        }
     }
-    dirs.dedup();
     dirs
 }
 
