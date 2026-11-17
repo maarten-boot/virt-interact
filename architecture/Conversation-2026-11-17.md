@@ -26,3 +26,8 @@
 - End-to-end under Xvfb with a fake `virsh` (fixture VM, VNC port of a fake server) and a fake viewer: the viewer read `RFB 003.008` through the tunnel; Close and closing the window stop the viewer and its helper. No real `remote-viewer`/libvirt on the dev machine: TC-103c (real host, all platforms) is open.
 - `domdisplay` fallback dropped from the Spec: the live XML of a running domain always has the port.
 - 144 tests pass (3 runs); fmt and clippy clean. Spec, TestCases (TC-100, 103, 103a–c, 104, 105), Plan 6.2, README (Consoles), example config, Changes (Unreleased) updated.
+
+## 4. CI fix for Windows
+**User:** Pushed 6.2.
+
+**Claude:** CI run 44066898742 (`fe7ca44`): Linux, macOS and MSRV pass with 144 tests; Windows failed in clippy: the `ViewerGroup` field is only read on unix (`dead_code`). Fixed with `#[cfg_attr(not(unix), allow(dead_code))]` on the field (no Windows target on the dev machine; the other unix-only paths were reviewed).

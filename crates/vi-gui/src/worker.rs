@@ -567,7 +567,7 @@ impl TaskCtx {
 /// group: on close, when the viewer has ended (leftover helpers), and when
 /// the app quits (the worker's runtime drops the task). Elsewhere a no-op;
 /// the viewer itself is also killed on drop (`kill_on_drop`).
-struct ViewerGroup(Option<u32>);
+struct ViewerGroup(#[cfg_attr(not(unix), allow(dead_code))] Option<u32>);
 
 impl Drop for ViewerGroup {
     fn drop(&mut self) {
