@@ -10,8 +10,11 @@ Changes between releases. Newest on top.
   connection; nothing is opened on the host's network. The tunnel closes
   when the viewer exits, or with "Close console".
 - Consoles of VMs on this machine are reached directly, without SSH.
-- The viewer is found on your `PATH`, in Homebrew's folders, or on Windows
-  in `Program Files\VirtViewer*`; set `[console] viewer` for another one.
+- The viewer is found on your `PATH`, in Homebrew's and MacPorts' folders,
+  or on Windows in `Program Files\VirtViewer*`; set `[console] viewer` for
+  another one. Install it with your Linux package manager (`virt-viewer`),
+  MacPorts on macOS, or winget / the MSI on Windows (see the README).
+- `virsh` for "This machine" is now also found in `/opt/local/bin` (MacPorts).
 
 **Interface**
 - New app icon: a blue "V" on a green rounded square (window, Windows

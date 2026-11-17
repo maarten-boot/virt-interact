@@ -12,10 +12,17 @@ use vi_core::model::ConsoleTarget;
 use vi_ssh::prompt::BoxFuture;
 use vi_ssh::{CommandOutput, CommandRunner, ConsoleStream, SshError};
 
-/// Directories searched for `virsh` after `PATH`. An app started from the
-/// macOS Finder or Dock gets a minimal `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`)
-/// without Homebrew's directories (crosscheck 2026-11-14-02, C1).
-pub const EXTRA_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
+/// Directories searched for `virsh` (and the console viewer) after `PATH`.
+/// An app started from the macOS Finder or Dock gets a minimal `PATH`
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`) without Homebrew's or MacPorts'
+/// directories (crosscheck 2026-11-14-02, C1; MacPorts: Plan 6.3).
+pub const EXTRA_DIRS: &[&str] = &[
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/opt/local/bin",
+    "/usr/bin",
+    "/bin",
+];
 
 /// The search path for `virsh`: `path` (normally `$PATH`), then each of
 /// [`EXTRA_DIRS`] that is not in it yet. [`find_virsh`] and [`LocalRunner`]
@@ -271,6 +278,7 @@ mod tests {
             "/usr/bin",
             "/opt/homebrew/bin",
             "/usr/local/bin",
+            "/opt/local/bin",
             "/bin",
         ]
         .iter()

@@ -37,9 +37,9 @@ pub fn viewer_url(kind: &str, local: SocketAddr) -> String {
 /// How to get the viewer on this platform (shown when it is not found).
 pub fn install_hint() -> &'static str {
     if cfg!(windows) {
-        "install virt-viewer for Windows (the MSI from virt-manager.org)"
+        "install virt-viewer (winget install RedHat.VirtViewer, or the MSI from virt-manager.org)"
     } else if cfg!(target_os = "macos") {
-        "install it with Homebrew: brew install virt-viewer"
+        "install it with MacPorts: sudo port install virt-viewer"
     } else {
         "install the virt-viewer package (apt install virt-viewer, dnf install virt-viewer)"
     }
@@ -47,8 +47,8 @@ pub fn install_hint() -> &'static str {
 
 /// The viewer program: `[console] viewer` (a path, or a name searched like
 /// the default), else `remote-viewer`. Searched on `PATH` plus the
-/// directories of [`vi_backend::local::search_path`] (Homebrew) and, on
-/// Windows, `Program Files\VirtViewer*\bin`.
+/// directories of [`vi_backend::local::search_path`] (Homebrew, MacPorts)
+/// and, on Windows, `Program Files\VirtViewer*\bin`.
 pub fn find_viewer(configured: Option<&str>) -> Result<PathBuf, String> {
     find_viewer_in(
         configured,

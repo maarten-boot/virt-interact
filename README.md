@@ -91,7 +91,7 @@ connection of each host stays open while the app runs, so later refreshes
 do not ask again.
 
 **This machine** needs no login: if `virsh` is found (on your `PATH`, or
-in `/opt/homebrew/bin` or `/usr/local/bin`, as on macOS), the tree
+in `/opt/homebrew/bin`, `/usr/local/bin` or `/opt/local/bin`, as on macOS), the tree
 starts with "localhost (system)" (`qemu:///system`) and "localhost (session)"
 (your own VMs, `qemu:///session`). They are read with the same read-only
 virsh commands, run locally. Configure or hide them under `[local]`
@@ -106,11 +106,20 @@ has **Open console** for each VNC or SPICE display. The console opens in
 `remote-viewer` (from virt-viewer) through the host's SSH connection: the
 app listens on a random port on `127.0.0.1` and forwards it, so the
 display does not need to be reachable on the host's network. Closing the
-viewer closes the tunnel; **Close console** stops both. Install the viewer
-with your package manager (`virt-viewer`), `brew install virt-viewer` on
-macOS, or the virt-viewer MSI on Windows; another viewer can be set with
-`[console] viewer = "/path/to/viewer"`. A console password, if set, is
-asked by the viewer.
+viewer closes the tunnel; **Close console** stops both. A console
+password, if set, is asked by the viewer. Install the viewer:
+
+| Platform | How | Found at |
+|----------|-----|----------|
+| Linux | the `virt-viewer` package (`apt install virt-viewer`, `dnf install virt-viewer`) | `PATH` |
+| macOS | MacPorts: `sudo port install virt-viewer` (Homebrew has no `virt-viewer` formula; its `remoteviewer` cask is an old, SPICE-only build) | `/opt/local/bin` |
+| Windows | `winget install RedHat.VirtViewer`, or the virt-viewer MSI from [virt-manager.org](https://virt-manager.org/download) | `C:\Program Files\VirtViewer v…\bin` |
+
+Another viewer can be set with `[console] viewer = "/path/to/viewer"`; it
+gets the URL (`vnc://127.0.0.1:<port>` or `spice://…`) as its only
+argument. To check a viewer without the GUI:
+`cargo run -p vi-gui --example console-check -- --find` (or with
+`vnc HOST:PORT` to open a console of this machine through the tunnel).
 
 Contrast is set under **Settings…**; the choice is saved to the config.
 Hovering or pressing changes only colours; nothing moves. Drag the line

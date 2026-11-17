@@ -1,0 +1,73 @@
+# Console viewer check (Plan 6.3, SPEC-018, TC-106). Started by hand
+# ("Run workflow"): installs remote-viewer the way the README says on each
+# platform and checks that the app's search finds it and that it runs.
+# On Linux it also opens a real VNC console (TigerVNC) through the app's
+# tunnel code (examples/console-check.rs).
+name: Viewer check
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies, virt-viewer and a VNC server
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libgl1-mesa-dev \
+            virt-viewer tigervnc-standalone-server xvfb
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Find the viewer
+        run: cargo run --locked -p vi-gui --example console-check -- --find
+      - name: Open a VNC console through the tunnel
+        run: |
+          # A VNC server with its own X display :1, no password, local only.
+          Xvnc :1 -rfbport 5901 -localhost -SecurityTypes None -geometry 800x600 &
+          sleep 2
+          xvfb-run -a cargo run --locked -p vi-gui --example console-check -- --seconds 8 vnc 127.0.0.1:5901
+
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      # MacPorts has virt-viewer (Homebrew has no formula). Pinned to the
+      # v1.1.6 commit.
+      - uses: melusina-org/setup-macports@103eded5f10979e927bffcd6d0b86cbbdb2c3bb3
+      - name: Install virt-viewer
+        run: sudo port -N install virt-viewer
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Find the viewer
+        run: cargo run --locked -p vi-gui --example console-check -- --find
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install virt-viewer (official MSI, checksum from winget RedHat.VirtViewer 11.0.256)
+        shell: pwsh
+        run: |
+          $url = "https://gitlab.com/virt-viewer/virt-viewer/-/releases/v11.0/downloads/virt-viewer-x64-11.0-1.0.msi"
+          $msi = "$env:RUNNER_TEMP\virt-viewer.msi"
+          Invoke-WebRequest -Uri $url -OutFile $msi
+          $hash = (Get-FileHash $msi -Algorithm SHA256).Hash
+          if ($hash -ne "B7DE0474E97FE1E81101F2406FCF603FE08666BCB3816C3C465C8D64330BE610") { throw "checksum mismatch: $hash" }
+          $p = Start-Process msiexec.exe -ArgumentList "/i", "`"$msi`"", "/qn", "/norestart" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec exit code $($p.ExitCode)" }
+          Get-ChildItem "$env:ProgramFiles" -Filter "VirtViewer*" | ForEach-Object { Get-ChildItem (Join-Path $_.FullName "bin") -Filter "remote-viewer*" }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: "Find the viewer (not on PATH, the Program Files search)"
+        run: cargo run --locked -p vi-gui --example console-check -- --find

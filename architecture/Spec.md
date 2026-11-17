@@ -78,7 +78,7 @@ Each host has these fields:
   - "localhost (system)": `[local] libvirt_uri`, default `qemu:///system`, with the optional `[local] virsh_prefix`;
   - "localhost (session)": `qemu:///session`, the user's own VMs (as used by GNOME Boxes, and by libvirt on macOS). Shown when `[local] session = true` (the default) and the system URI is not already the session URI. Reading it may start the user's session libvirt daemon, as any `virsh -c qemu:///session` does.
 - `[local] enabled`:
-  - `"auto"` (default): shown when `virsh` is found on the search path: `PATH`, then `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin` (an app started from the macOS Finder or Dock gets a minimal `PATH` without Homebrew). The same search path is used to run `virsh`, so detection and execution agree. Settings shows where `virsh` was found;
+  - `"auto"` (default): shown when `virsh` is found on the search path: `PATH`, then `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin`, `/usr/bin`, `/bin` (an app started from the macOS Finder or Dock gets a minimal `PATH` without Homebrew). The same search path is used to run `virsh`, so detection and execution agree. Settings shows where `virsh` was found;
   - `"always"`: always shown (an error explains a missing `virsh`);
   - `"never"`: hidden.
 - The same allowlisted, read-only command lines as for remote hosts (SPEC-011: `LC_ALL=C`, `virsh -r`, quoting) run through the local POSIX shell (`sh -c`), with the `[ssh] command_timeout_secs` limit. Platforms without a POSIX shell (Windows) do not show local entries in `"auto"` mode.
@@ -230,8 +230,8 @@ Scope of an error:
   - Several connections at once are forwarded (SPICE opens one per channel). Closing the tunnel stops the listener and ends every connection. A connection the host refuses is closed locally and its error kept for the GUI.
   - The port is reachable only from this machine, but by any local process while the tunnel is open; a console password still applies.
 - It launches an external viewer with `vnc://127.0.0.1:<port>` or `spice://127.0.0.1:<port>` as its only argument.
-  - The viewer is `[console] viewer` in the config (a path, or a program name), else `remote-viewer` (virt-viewer). A name is searched on `PATH`, then `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin`, and on Windows in `Program Files\VirtViewer*\bin` (newest version first; `.exe` added).
-  - Not found: an error with the install hint for the platform (Linux: the `virt-viewer` package; macOS: `brew install virt-viewer`; Windows: the virt-viewer MSI) and the config key.
+  - The viewer is `[console] viewer` in the config (a path, or a program name), else `remote-viewer` (virt-viewer). A name is searched on `PATH`, then `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin`, `/usr/bin`, `/bin`, and on Windows in `Program Files\VirtViewer*\bin` (newest version first; `.exe` added).
+  - Not found: an error with the install hint for the platform (Linux: the `virt-viewer` package; macOS: MacPorts `sudo port install virt-viewer`, as Homebrew has no formula; Windows: `winget install RedHat.VirtViewer` or the virt-viewer MSI) and the config key.
 - The tunnel lives as long as the viewer:
   - When the viewer exits, the tunnel closes. A viewer that fails (non-zero exit) is reported with its last stderr line and any tunnel error.
   - "Close console" (the same button while open) stops the viewer and closes the tunnel. On Linux/macOS the viewer runs in its own process group; closing sends it SIGTERM, then SIGKILL after 2 s, so the helpers of a wrapper script stop too. The same happens when the app is closed, or the host is edited or removed, or the config is reloaded.

@@ -31,3 +31,12 @@
 **User:** Pushed 6.2.
 
 **Claude:** CI run 44066898742 (`fe7ca44`): Linux, macOS and MSRV pass with 144 tests; Windows failed in clippy: the `ViewerGroup` field is only read on unix (`dead_code`). Fixed with `#[cfg_attr(not(unix), allow(dead_code))]` on the field (no Windows target on the dev machine; the other unix-only paths were reviewed).
+
+## 5. Phase 6.3: remote-viewer per platform
+**User:** Start phase 6.3.
+
+**Claude:** Checked the install routes (web, 2026-11-17):
+- Linux: the `virt-viewer` package (Debian/Ubuntu, Fedora).
+- macOS: Homebrew has **no** `virt-viewer` formula (`formulae.brew.sh` 404) — the README/hint from 6.2 ("brew install virt-viewer") was wrong. The `remoteviewer` cask is version 0.5.7 (SPICE only, old). MacPorts has `virt-viewer` 11.0 in `/opt/local/bin`, which was not on the search path: added to `EXTRA_DIRS` (also for `virsh`).
+- Windows: virt-viewer 11.0 (2021-11-18, still the latest) as MSI from gitlab.com/virt-viewer (linked from virt-manager.org), also winget `RedHat.VirtViewer` 11.0.256 (manifest with SHA256).
+Added `examples/console-check.rs` (find the viewer and run `--version`; or open a console of this machine through the tunnel and pass if the viewer stays connected; tried with stand-ins: pass and both fail cases) and `.github/workflows/viewer-check.yml` (by hand: Linux apt + TigerVNC real console; macOS MacPorts via setup-macports pinned to the v1.1.6 commit; Windows MSI with checksum, found through the Program Files search). Install hints, README (table), Spec, example config, TestCases (TC-106 new, TC-112), Plan 6.3, Changes updated. The workflow has to be run by the user.
