@@ -99,8 +99,17 @@ about.toml       accepted third-party licences (cargo-about; about.hbs is the no
 - [x] 6.2 Viewer launch, configurable path, tunnel lifetime tied to the viewer process: "Open console"/"Close console" per graphics device; live graphics read again on open (`HypervisorBackend::graphics`); local VMs connect directly; `[console] viewer` and the viewer search; the viewer's process group is stopped on close (unix); tests TC-100, TC-103/103a/103b, TC-104, TC-105; end-to-end check under Xvfb with stand-ins (2026-11-17). Open: TC-103c with a real host and `remote-viewer`.
 - [x] 6.3 Check that `remote-viewer` is available on each platform and document how to install it: Linux `virt-viewer` package; macOS MacPorts (no Homebrew formula; `/opt/local/bin` added to the search path); Windows winget `RedHat.VirtViewer` or the MSI (virt-viewer 11.0). README table; `examples/console-check.rs`; `viewer-check.yml` (by hand). Workflow run 44167663646 passed on all three platforms (TC-106).
 
+### Phase 7: v1.2 VMware vSphere (SPEC-021, 022, 023)
+Decided 2026-11-18: password asked per app session and kept only in memory; flat tree with datacenter/cluster/ESXi host as VM fields; after release 1.1. Tests: vcsim (govmomi's vSphere simulator, ESXi and vCenter mode) in CI, recorded SOAP responses as fixtures; manual check on the user's ESXi host and a vCenter with a restricted view.
+- [ ] 7.1 Config: `backend = "vsphere"`, field rules (SPEC-005); host editor shows only the fields of the chosen backend.
+- [ ] 7.2 HTTPS client: rustls (ring) on tokio; certificate check and `known_certs` with the accept dialog (SPEC-023).
+- [ ] 7.3 SOAP layer with the method allowlist; Login/Logout, session kept per host and ended on forget/reload/quit; password dialog (SPEC-022).
+- [ ] 7.4 Inventory: PropertyCollector traversal (paged), mapping to the model, permission gaps tolerated (SPEC-021); fixtures from vcsim and from real ESXi/vCenter responses (anonymised).
+- [ ] 7.5 GUI: vSphere fields (datacenter, cluster, ESXi host, Tools, hardware version), "n/a" for libvirt-only fields, console "not available for vSphere"; README (Read-only role, certificates).
+- [ ] 7.6 CI job with vcsim (ESXi and vCenter mode); manual tests on real systems; crosscheck.
+
 ### Later
-- SPEC-019 embedded VNC viewer; other backends (SPEC-017); `ProxyJump` support.
+- SPEC-019 embedded VNC viewer; other backends (SPEC-017); `ProxyJump` support; vSphere password in the OS keychain (optional).
 
 ## Risks
 | Risk | Mitigation |

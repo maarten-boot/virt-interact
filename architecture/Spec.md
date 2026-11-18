@@ -64,11 +64,12 @@ Each host has these fields:
 | `port` | no | from ssh config, else 22 | SSH port, 1–65535 |
 | `user` | no | from ssh config, else the local user name | Remote user |
 | `identity_file` | no | from ssh config / agent / default keys | Private key path. A leading `~` is expanded to the local home directory (`~user` is not). |
-| `backend` | no | `"libvirt"` | Virtualisation backend (SPEC-017) |
+| `backend` | no | `"libvirt"` | Virtualisation backend (SPEC-017): `"libvirt"`, or `"vsphere"` (v1.2, SPEC-021) |
 | `libvirt_uri` | no | `"qemu:///system"` | URI passed to `virsh -c` |
 | `virsh_prefix` | no | none | Command prefix, e.g. `"sudo -n"`; plain characters only (SPEC-011) |
 
 - Hosts can be added, edited and removed in the GUI. Changes are saved to the config file.
+- v1.2: a `vsphere` host uses `host`, `port` (default 443) and `user` (required); `identity_file`, `libvirt_uri` and `virsh_prefix` are refused for it, and SSH config (SPEC-007) does not apply. Its password is never in the file (SPEC-022).
 - Host names must be unique and not empty; `host` must not be empty. Names starting with `@` are reserved for the local entries (SPEC-020).
 - The GUI and the file stay consistent: a host added in the file appears after a reload.
 
@@ -94,7 +95,7 @@ Each host has these fields:
   3. Only if no key file is configured (app or ssh config): the default keys `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa` (those that exist).
 - Agent keys that match a configured key file (recognised by its `.pub`) are offered first, so an agent with many keys does not use up the server's `MaxAuthTries` before the right key.
 - If the server closes the connection during authentication (e.g. too many attempts), the error still lists the keys tried, with a note that the server hung up.
-- Password authentication and keyboard-interactive authentication are never used.
+- Password authentication and keyboard-interactive authentication are never used for SSH. (The vSphere backend, v1.2, logs in to the vSphere API with a password: SPEC-022.)
 - If a key file is encrypted, the GUI asks for its passphrase. The SSH layer uses it for one connection attempt and then wipes it; the GUI does not keep it. Instead the SSH connection of each host stays open while the app runs, so a later refresh does not ask again; the connection is dropped when the host is edited or removed, when the config is reloaded, or when it breaks (the app then reconnects once). It is never written to disk or to logs.
 - SSH is implemented with `russh` (crypto backend `ring`, so no C toolchain/cmake is needed on Windows). There is no dependency on an external `ssh` binary.
 - A key that the agent already offered is not tried again from its file, so its passphrase is not asked for needlessly (the `.pub` next to the key file is used to recognise it).
@@ -209,7 +210,7 @@ Scope of an error:
 ## 7. Architecture
 
 ### SPEC-017: Backend abstraction (v1 design, later implementations)
-- Inventory access goes through a backend trait (for example, `HypervisorBackend`). v1 has one implementation: `libvirt` (virsh over SSH, or locally for SPEC-020).
+- Inventory access goes through a backend trait (for example, `HypervisorBackend`). v1 has one implementation: `libvirt` (virsh over SSH, or locally for SPEC-020). v1.2 adds `vsphere` (SPEC-021), which talks HTTPS instead of running commands.
 - Command execution goes through a trait (`CommandRunner`): an SSH session, a local shell runner (SPEC-020), or a mock for tests.
 - Other backends (for example Proxmox or Hyper-V) can be added later without changing the GUI.
 
@@ -242,3 +243,31 @@ Scope of an error:
 
 ### SPEC-019: Embedded VNC viewer (later)
 - A VNC viewer built into the app, as an alternative to the external viewer.
+
+## 9. VMware vSphere (v1.2, planned)
+
+### SPEC-021: vSphere backend for ESXi and vCenter (v1.2)
+- A host with `backend = "vsphere"` is a standalone ESXi host or a vCenter Server. The app reads it through the vSphere Web Services API (SOAP, `https://<host>:<port>/sdk`), which both offer. The REST "Automation" API (`/api`) is not used: it exists only on vCenter.
+- **Read-only, enforced in one place (like SPEC-011).** Only these API methods can be sent: `RetrieveServiceContent`, `SessionManager.Login`, `SessionManager.Logout`, `PropertyCollector.RetrievePropertiesEx`, `PropertyCollector.ContinueRetrievePropertiesEx`. The inventory is walked with traversal specs from the root folder, so no server-side view objects are created. Covered by tests. A user with the vSphere "Read-only" role is enough and is recommended (README). The free ESXi edition, whose API is read-only, works.
+- **What is shown** (mapped onto the existing model, so the GUI needs no backend-specific screens):
+  - Machine list (SPEC-009): name, UUID (`config.uuid`), state from `runtime.powerState` (poweredOn → running, poweredOff → shut off, suspended → suspended), template VMs marked as templates. "Persistent" and "Autostart" are not libvirt concepts: shown as "n/a".
+  - General: guest OS (`config.guestFullName`, `config.guestId`), firmware (`config.firmware`: BIOS or UEFI), hardware version, VMware Tools status, annotation as description. For a vCenter: the VM's datacenter, cluster and ESXi host (the tree stays flat: SPEC-015 unchanged).
+  - CPU and memory: vCPUs, cores per socket, memory size.
+  - Disks: controller and unit, backing file (`[datastore] path.vmdk`), capacity, thin/thick; CD-ROM (ISO path or empty).
+  - Network adapters: type (vmxnet3, e1000e, …), MAC address, port group or distributed port group name, connected.
+  - Other devices: one line per remaining device (controllers, video, USB, …).
+  - Raw: the VM's properties as returned (XML), read-only, instead of the libvirt domain XML.
+- **Limited permissions.** Objects the user may not see are simply absent; a property the user may not read is shown as unknown. Neither is an error for the host (seen on a vCenter with a restricted view).
+- **Consoles:** not available for vSphere VMs ("not available for vSphere": ESXi 7.0 removed the built-in VNC server, and the VMware console protocol is not supported).
+- Large inventories are read in pages (`ContinueRetrievePropertiesEx`); the refresh timeout (SPEC-012) applies to the whole read.
+
+### SPEC-022: vSphere login with user and password (v1.2)
+- The password is asked when the host is first read in an app session (the same dialog style as an SSH key passphrase), used once for `Login`, then wiped (zeroized). It is never written to the config, the cache, or logs.
+- The session (its cookie) is kept in memory while the app runs, like a kept SSH connection (SPEC-006): a later refresh does not ask again. It is ended with `Logout` when the host is edited or removed, when the config is reloaded, and when the app quits. An expired session is replaced by asking for the password again.
+- A wrong user or password gives "login failed" without saying which was wrong; the app does not retry on its own (no account lockout from retries).
+- Remembering the password in the OS keychain is not in v1.2 (later, optional).
+
+### SPEC-023: vSphere server certificate trust (v1.2)
+- HTTPS uses rustls (ring crypto provider, as for SSH: no C toolchain). Certificates trusted by the system are accepted, with the host name checked.
+- A certificate the system does not trust (the self-signed default of ESXi and vCenter) is shown with its subject, validity and SHA-256 fingerprint; the user accepts or rejects, as for an unknown SSH host key (SPEC-008). An accepted fingerprint is stored per `host:port` in `known_certs` in the app's config directory (mode 0600 on Unix) and trusted from then on.
+- A stored fingerprint that no longer matches is refused with a prominent warning and no override in the GUI (the user removes the entry from `known_certs` after checking). TLS 1.2 is the minimum.
