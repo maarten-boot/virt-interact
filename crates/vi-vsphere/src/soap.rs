@@ -323,6 +323,15 @@ pub fn fault(doc: &roxmltree::Document<'_>) -> Option<Fault> {
     })
 }
 
+/// The plain `type` attribute of a managed object reference. Not
+/// `attribute("type")`: roxmltree matches that by local name, so it would
+/// also return `xsi:type` (the value's XML type) of every value.
+pub fn ref_type<'a>(n: roxmltree::Node<'a, '_>) -> Option<&'a str> {
+    n.attributes()
+        .find(|a| a.namespace().is_none() && a.name() == "type")
+        .map(|a| a.value())
+}
+
 /// `xsd:string` → `string`.
 pub fn strip_prefix(t: &str) -> &str {
     t.rsplit(':').next().unwrap_or(t)
@@ -399,6 +408,12 @@ mod tests {
         let ok = parse_body("<a><b/></a>").unwrap();
         assert_eq!(fault(&ok), None);
         assert_eq!(strip_prefix("xsd:string"), "string");
+        // A value has only xsi:type; a reference also has a plain type.
+        let x = r#"<a xmlns:x="http://www.w3.org/2001/XMLSchema-instance"><v x:type="xsd:string">n</v><r type="Folder" x:type="ManagedObjectReference">g</r></a>"#;
+        let d = roxmltree::Document::parse(x).unwrap();
+        let el = |n: &str| d.descendants().find(|c| c.tag_name().name() == n).unwrap();
+        assert_eq!(ref_type(el("v")), None);
+        assert_eq!(ref_type(el("r")), Some("Folder"));
         assert_eq!(escape("a<b"), "a&lt;b");
     }
 }

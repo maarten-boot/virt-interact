@@ -281,7 +281,7 @@ async fn service_content(http: &SoapHttp) -> Result<Content, VsphereError> {
             reason: format!("no {name} in the service content"),
         })?;
         Ok(MoRef::new(
-            n.attribute("type").unwrap_or_default(),
+            soap::ref_type(n).unwrap_or_default(),
             n.text().unwrap_or_default().trim(),
         ))
     };

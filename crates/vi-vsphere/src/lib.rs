@@ -4,6 +4,7 @@
 
 pub mod error;
 pub mod http;
+pub mod inventory;
 pub mod known_certs;
 pub mod session;
 pub mod soap;

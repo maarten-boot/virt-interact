@@ -99,10 +99,16 @@ async fn esx_login_inventory_logout() {
     let pages = session.inventory_pages().await.unwrap();
     let all = pages.concat();
     assert!(
-        all.contains("<type>VirtualMachine</type>") || all.contains("type=\"VirtualMachine\""),
+        all.contains("type=\"VirtualMachine\""),
         "{}",
         &all[..all.len().min(500)]
     );
+    let inv = vi_vsphere::inventory::parse(&pages, session.about()).unwrap();
+    assert_eq!(inv.hypervisor.as_deref(), Some("ESXi"));
+    assert!(!inv.domains.is_empty());
+    if let Some(dir) = std::env::var_os("VI_DUMP") {
+        std::fs::write(std::path::Path::new(&dir).join("esx-page0.xml"), &pages[0]).unwrap();
+    }
     // Pinned: the next connect does not ask about the certificate.
     session.logout().await;
     let p2 = prompter(&["pw"]);
@@ -175,4 +181,68 @@ async fn vcenter_inventory_in_pages() {
             .sum::<usize>()
     };
     assert_eq!(count(&small), count(&pages));
+}
+
+// TC-132 (vcsim part): the vCenter inventory mapped onto the model.
+#[tokio::test(flavor = "multi_thread")]
+async fn vcenter_mapping() {
+    let Some(sim) = start(false) else {
+        return skip();
+    };
+    let d = tempfile::tempdir().unwrap();
+    let s = settings(d.path(), sim.port);
+    let session = VsphereSession::connect(&s, &prompter(&["pw"]))
+        .await
+        .unwrap();
+    let pages = session.inventory_pages().await.unwrap();
+    let inv = vi_vsphere::inventory::parse(&pages, session.about()).unwrap();
+    // VI_DUMP=<dir>: keep the answer and the mapping for a look.
+    if let Some(dir) = std::env::var_os("VI_DUMP") {
+        let dir = std::path::PathBuf::from(dir);
+        for (i, p) in pages.iter().enumerate() {
+            std::fs::write(dir.join(format!("page{i}.xml")), p).unwrap();
+        }
+        std::fs::write(dir.join("inventory.txt"), format!("{inv:#?}")).unwrap();
+    }
+    assert_eq!(inv.hypervisor.as_deref(), Some("vCenter"));
+    assert!(inv.domains.len() >= 4, "{}", inv.domains.len());
+    for vm in &inv.domains {
+        let x = vm.details.as_ref().expect("details");
+        let v = x.general.vsphere.as_ref().unwrap();
+        assert_eq!(v.datacenter.as_deref(), Some("DC0"), "{}", vm.name);
+        assert!(v.esxi_host.is_some(), "{}", vm.name);
+        assert!(x.cpu.current.is_some() && x.memory.max_kib.is_some());
+        assert!(
+            !x.disks.is_empty() && !x.interfaces.is_empty(),
+            "{}",
+            vm.name
+        );
+        assert!(x.interfaces.iter().all(|i| i.mac.is_some()));
+        assert!(x.xml.starts_with("<objects>"));
+        assert!(vm.uuid.is_some());
+    }
+    // Cluster VMs know their cluster; standalone-host VMs have none.
+    assert!(inv.domains.iter().any(|d| {
+        d.details
+            .as_ref()
+            .unwrap()
+            .general
+            .vsphere
+            .as_ref()
+            .unwrap()
+            .cluster
+            .as_deref()
+            == Some("DC0_C0")
+    }));
+    assert!(inv.domains.iter().any(|d| {
+        d.details
+            .as_ref()
+            .unwrap()
+            .general
+            .vsphere
+            .as_ref()
+            .unwrap()
+            .cluster
+            .is_none()
+    }));
 }

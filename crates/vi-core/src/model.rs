@@ -120,6 +120,26 @@ pub struct General {
     pub guest_os_id: Option<String>,
     pub title: Option<String>,
     pub description: Option<String>,
+    /// VMware vSphere VMs only (SPEC-021, v1.3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vsphere: Option<VsphereInfo>,
+}
+
+/// What only a vSphere VM has (SPEC-021): where it runs and VMware details.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct VsphereInfo {
+    pub datacenter: Option<String>,
+    pub cluster: Option<String>,
+    /// The ESXi host the VM is registered on.
+    pub esxi_host: Option<String>,
+    /// e.g. `vmx-19`.
+    pub hardware_version: Option<String>,
+    /// VMware Tools, e.g. `running, current`.
+    pub tools: Option<String>,
+    /// e.g. `Ubuntu Linux (64-bit)`.
+    pub guest_full_name: Option<String>,
+    pub template: bool,
 }
 
 impl General {

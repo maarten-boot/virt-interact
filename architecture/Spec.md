@@ -251,11 +251,11 @@ Scope of an error:
 - A host with `backend = "vsphere"` is a standalone ESXi host or a vCenter Server. The app reads it through the vSphere Web Services API (SOAP, `https://<host>:<port>/sdk`), which both offer. The REST "Automation" API (`/api`) is not used: it exists only on vCenter.
 - **Read-only, enforced in one place (like SPEC-011).** Only these API methods can be sent: `RetrieveServiceContent`, `SessionManager.Login`, `SessionManager.Logout`, `PropertyCollector.RetrievePropertiesEx`, `PropertyCollector.ContinueRetrievePropertiesEx`. The inventory is walked with traversal specs from the root folder, so no server-side view objects are created. Covered by tests. A user with the vSphere "Read-only" role is enough and is recommended (README). The free ESXi edition, whose API is read-only, works.
 - **What is shown** (mapped onto the existing model, so the GUI needs no backend-specific screens):
-  - Machine list (SPEC-009): name, UUID (`config.uuid`), state from `runtime.powerState` (poweredOn → running, poweredOff → shut off, suspended → suspended), template VMs marked as templates. "Persistent" and "Autostart" are not libvirt concepts: shown as "n/a".
+  - Machine list (SPEC-009): name, UUID (`config.uuid`), state from `runtime.powerState` (poweredOn → running, poweredOff → shut off, suspended → "suspended"), template VMs marked as templates. "Persistent" and "Autostart" are libvirt concepts: shown as "n/a".
   - General: guest OS (`config.guestFullName`, `config.guestId`), firmware (`config.firmware`: BIOS or UEFI), hardware version, VMware Tools status, annotation as description. For a vCenter: the VM's datacenter, cluster and ESXi host (the tree stays flat: SPEC-015 unchanged).
   - CPU and memory: vCPUs, cores per socket, memory size.
   - Disks: controller and unit, backing file (`[datastore] path.vmdk`), capacity, thin/thick; CD-ROM (ISO path or empty).
-  - Network adapters: type (vmxnet3, e1000e, …), MAC address, port group or distributed port group name, connected.
+  - Network adapters: type (vmxnet3, e1000e, …), MAC address, port group or distributed port group (by name), "(disconnected)" when not connected.
   - Other devices: one line per remaining device (controllers, video, USB, …).
   - Raw: the VM's properties as returned (XML), read-only, instead of the libvirt domain XML.
 - **Limited permissions.** Objects the user may not see are simply absent; a property the user may not read is shown as unknown. Neither is an error for the host (seen on a vCenter with a restricted view).

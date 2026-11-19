@@ -89,6 +89,7 @@ fn general(root: Node) -> General {
         guest_os_id,
         title: text(child(root, "title")),
         description: text(child(root, "description")),
+        vsphere: None,
     }
 }
 

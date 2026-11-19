@@ -1,5 +1,6 @@
-//! Hypervisor backends for virt-interact (SPEC-017). v1 ships the libvirt
-//! backend: allowlisted, read-only virsh commands over SSH (SPEC-009..011).
+//! Hypervisor backends for virt-interact (SPEC-017): libvirt (allowlisted,
+//! read-only virsh commands over SSH or locally, SPEC-009..011, SPEC-020)
+//! and VMware vSphere (read-only API, SPEC-021).
 
 pub mod command;
 pub mod domxml;
@@ -7,6 +8,7 @@ pub mod error;
 pub mod libvirt;
 pub mod local;
 pub mod parse;
+pub mod vsphere;
 
 use std::time::Duration;
 
@@ -60,14 +62,9 @@ pub fn for_host_with(
             }
             Ok(Box::new(b))
         }
-        // Phase 8 in progress: the backend arrives with 8.3/8.4.
-        Backend::Vsphere => Err(vsphere_not_ready()),
+        // SPEC-021: requests have their own timeout (the session's).
+        Backend::Vsphere => Ok(Box::new(vsphere::VsphereBackend)),
     }
-}
-
-/// Until the vSphere backend is complete (Plan 8.3/8.4).
-pub fn vsphere_not_ready() -> BackendError {
-    BackendError::Config("reading vSphere hosts is not finished yet (planned for 1.3)".into())
 }
 
 #[cfg(test)]
