@@ -32,3 +32,7 @@ Done:
 - 7.3 `scripts/publish_release.sh`: exactly six files and matching checksums, then publish as latest; tried against v1.0.0/v1.1.0 (publish stubbed) and a missing file (refused).
 - Under Xvfb: both menus shown; "Start SSH" gave a configured stand-in terminal `-e ssh -l ops -- <host>`; Settings row shown.
 - 152 tests pass; fmt and clippy clean. Open: TC-144 (real terminals), TC-123 (next tag).
+
+**User:** Pushed.
+
+**Claude:** CI run 44522791048 (`006c2d8`): all 4 jobs green; 152 tests on Linux, macOS and MSRV, 140 on Windows. TC-010 updated. Its archives are for TC-144 (Start SSH with real terminals).
