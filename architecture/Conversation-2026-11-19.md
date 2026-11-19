@@ -94,3 +94,8 @@ Done:
 **User:** ESXi works. The vCenter allows only its web SSO login page (SAML2) with a supported browser, so it cannot be tested.
 
 **Claude:** TC-136: ESXi pass. That page is vCenter's standard login page for every vSphere Client login; the app logs in through the API (`/sdk`) with the same user and password, so it may still work: to be tried in the app (user written in full, e.g. `user@domain`). If the password is refused, the vCenter likely uses identity federation (external identity provider), whose accounts have no API password: then a known limitation for 1.3, and token-based login a separate later feature. The vCenter's host name is not recorded in the repo.
+
+## 15. Config files between versions
+**User:** Do both for 1.3.
+
+**Claude:** No toml_edit needed (the app already rewrites the whole file on save): `Config` keeps unknown top-level entries in a `#[serde(flatten)]` table (one warning each; written back unchanged); the known sections and host entries stay strict (typos are errors with their line); `[console]`/`[terminal]` are skipped when they hold no setting. New TC-028b (also checks that a default file has only the five 1.0 sections). Spec SPEC-004, Changes.

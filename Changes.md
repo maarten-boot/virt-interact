@@ -15,6 +15,14 @@ Changes between releases. Newest on top.
   Tools; templates are marked. No consoles for vSphere VMs.
 - The default `libvirt_uri` is no longer written to the config file.
 
+**Config file between versions**
+- Empty `[console]` and `[terminal]` sections are no longer written, so a
+  config saved by this version can still be read by 1.0 as long as no
+  console viewer or terminal is set. (1.1 and 1.2 wrote them always, and
+  1.0 refuses a file that has them: "unknown field `console`".)
+- From this version on, a section the app does not know (written by a
+  newer version) gives a warning and is kept when the config is saved.
+
 ## 1.2.0 (2026-11-19)
 
 Adds **right-click menus** in the host tree and **SSH to a host in a

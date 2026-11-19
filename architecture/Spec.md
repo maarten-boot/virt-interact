@@ -53,6 +53,7 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
 - `[ui]` keys: `contrast` (SPEC-001) and `refresh_on_start` (bool, default `false`; SPEC-012).
 - `[local]` keys: `enabled`, `libvirt_uri`, `virsh_prefix`, `session` (SPEC-020).
 - If the file is missing, the app starts with defaults and creates the file the first time it saves.
+- Between versions (v1.3): sections that hold no setting are not written (an empty `[console]` or `[terminal]`), so a file saved by a newer version stays readable by an older one as long as the newer features are not used. An unknown top-level section or key (from a newer version) is a warning, not an error: it is ignored and written back unchanged when the app saves. An unknown key inside a known section or host entry is still an error with its line (typos). Versions 1.0–1.2 reject any section they do not know; with them, use the version that wrote the file.
 - An invalid file gives a clear error message with the line number. Unknown keys count as invalid, so typing mistakes are caught. The app does not overwrite an invalid file: it starts with defaults and does not save changes until the file is fixed.
 
 ### SPEC-005: Host definitions (v1)

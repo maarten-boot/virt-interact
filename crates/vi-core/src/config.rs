@@ -34,8 +34,16 @@ pub const DEFAULT_SSH_PORT: u16 = 22;
 pub const DEFAULT_LIBVIRT_URI: &str = "qemu:///system";
 
 /// The whole configuration file.
+///
+/// Compatibility between versions (SPEC-005, v1.3):
+/// - sections that hold no setting are not written, so a file saved by a
+///   newer version stays readable by an older one as long as the newer
+///   features are not used;
+/// - an unknown top-level section (from a newer version) is a warning, not
+///   an error: it is ignored and written back unchanged when the app saves.
+///   Unknown keys inside a known section are still errors (typos).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct Config {
     pub ui: UiConfig,
     pub ssh: SshSettings,
@@ -43,10 +51,19 @@ pub struct Config {
     /// The local machine, read without SSH (SPEC-020).
     pub local: LocalConfig,
     /// Remote consoles (SPEC-018).
+    #[serde(skip_serializing_if = "is_default")]
     pub console: ConsoleConfig,
     /// The terminal for "Start SSH" (SPEC-025).
+    #[serde(skip_serializing_if = "is_default")]
     pub terminal: TerminalConfig,
     pub hosts: Vec<HostConfig>,
+    /// Unknown top-level entries, kept as read and written back.
+    #[serde(flatten)]
+    pub unknown: toml::Table,
+}
+
+fn is_default<T: Default + PartialEq>(v: &T) -> bool {
+    *v == T::default()
 }
 
 /// `[console]`: the external viewer (SPEC-018).
@@ -318,8 +335,17 @@ impl Config {
             }
         })?;
 
+        let mut warnings: Vec<String> = config
+            .unknown
+            .keys()
+            .map(|k| {
+                format!(
+                    "unknown setting \"{k}\" (from a newer version of virt-interact?): \
+                     ignored, and kept unchanged when the config is saved"
+                )
+            })
+            .collect();
         // Re-read the raw contrast value to report clamping (TC-004).
-        let mut warnings = Vec::new();
         if let Ok(table) = toml::from_str::<toml::Table>(text)
             && let Some(raw) = table
                 .get("ui")
@@ -714,6 +740,50 @@ virsh_prefix = "sudo -n"
         );
         // SPEC-022: a password is never in the file.
         refused("user = \"r\"\npassword = \"x\"\n", "password");
+    }
+
+    // TC-028b: files between versions. Empty sections are not written, so a
+    // 1.0.x app (which knew only these five sections) can read what a newer
+    // one saved; unknown top-level entries from a newer version are a
+    // warning and are written back unchanged; typos in known sections are
+    // still errors.
+    #[test]
+    fn compatibility_between_versions() {
+        const V1_0: [&str; 5] = ["ui", "ssh", "logging", "local", "hosts"];
+        let mut c = Config::default();
+        c.hosts.push(HostConfig::new("lab", "lab.example.lan"));
+        let text = c.to_toml().unwrap();
+        let top: toml::Table = toml::from_str(&text).unwrap();
+        assert!(top.keys().all(|k| V1_0.contains(&k.as_str())), "{text}");
+        // A setting in a newer section is written.
+        c.console.viewer = Some("remote-viewer".into());
+        assert!(c.to_toml().unwrap().contains("[console]"));
+
+        let newer = "future_flag = true\n[ui]\nrefresh_on_start = true\n[future]\nmode = \"x\"\nlevels = [1, 2]\n[[hosts]]\nname = \"a\"\nhost = \"h\"\n";
+        let (cfg, warnings) = Config::parse(newer, p()).unwrap();
+        assert!(cfg.ui.refresh_on_start);
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("\"future\"") && w.contains("kept unchanged"))
+        );
+        let saved = cfg.to_toml().unwrap();
+        let again: toml::Table = toml::from_str(&saved).unwrap();
+        assert_eq!(again["future"]["mode"].as_str(), Some("x"));
+        assert_eq!(again["future"]["levels"].as_array().unwrap().len(), 2);
+        assert_eq!(again["future_flag"].as_bool(), Some(true));
+        assert_eq!(Config::parse(&saved, p()).unwrap().0, cfg);
+
+        // Still errors: an unknown key inside a known section, with its line.
+        match Config::parse("[ui]\nrefresh_on_strat = true\n", p()) {
+            Err(ConfigError::Parse { line, message, .. }) => {
+                assert_eq!(line, 2);
+                assert!(message.contains("refresh_on_strat"), "{message}");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(Config::parse("[[hosts]]\nname = \"a\"\nhost = \"h\"\nhots = 1\n", p()).is_err());
     }
 
     // TC-023
