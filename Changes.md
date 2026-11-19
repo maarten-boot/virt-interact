@@ -4,19 +4,52 @@ Changes between releases. Newest on top.
 
 ## Unreleased
 
+Nothing yet.
+
+## 1.2.0 (2026-11-19)
+
+Adds **right-click menus** in the host tree and **SSH to a host in a
+terminal**.
+
 **Tree menus**
-- Right-click a VM in the tree: "Open console" for each VNC/SPICE display
-  (or "Close console"), "Copy name", "Copy UUID".
-- Right-click a host: "Refresh", "Edit…", "Remove…", "Start SSH" (opens
-  a terminal running your own `ssh` to the host, with the host's user,
-  port and key) and "Copy ssh command".
-- The terminal is detected (Linux: x-terminal-emulator, gnome-terminal,
-  konsole, …; macOS: Terminal.app; Windows: Windows Terminal or a console
-  window) or set with `[terminal] command` or in Settings.
+- Right-click a VM: "Open console" for each VNC/SPICE display (numbered
+  when a VM has two of a kind), "Close console" while one is open, "Copy
+  name", "Copy UUID". Items that cannot be used are greyed out; hover for
+  the reason (VM not running, refresh the host first, …).
+- Right-click a host: "Refresh", "Edit…", "Remove…", "Start SSH" and "Copy
+  ssh command". For "This machine" there is no SSH, and Edit/Remove are
+  greyed out (it is set up under `[local]`).
+- Right-clicking does not change the selection, and nothing moves.
+
+**SSH in a terminal**
+- "Start SSH" opens a terminal running your own `ssh` (OpenSSH) with the
+  host's `user`, `port` and `identity_file` from this app; aliases, jump
+  hosts and known hosts come from your `~/.ssh/config`. It is your own
+  session: the app does not see it, and ssh may ask for a password.
+- The terminal is found automatically (Linux: x-terminal-emulator,
+  gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, xterm; macOS:
+  Terminal.app; Windows: Windows Terminal, else a console window), or set
+  in Settings → "Terminal (Start SSH)" or with `[terminal] command` in the
+  config. Settings shows which terminal is used.
+- "Copy ssh command" puts the same command line on the clipboard.
 
 **Releases**
 - A release is published automatically once its six files are attached
-  and every archive matches its checksum.
+  and every archive matches its checksum (1.1.0 was first published
+  without its files, which were added by hand).
+
+**Downloads**
+- As before: Linux x86_64 (tar.gz, glibc 2.35 or newer), Windows x86_64
+  (zip), macOS 12+ for Apple Silicon and Intel (app in a zip); each with a
+  `.sha256` file, `LICENSE` (MIT) and the licences of all bundled libraries.
+
+**Known limitations**
+- Start SSH and the menus were tried on Linux and Windows; on macOS
+  (Terminal.app) they are untested.
+- As in 1.1.0: consoles are untested with a real Mac; TLS-only consoles
+  and a built-in viewer are not supported; libvirt is the only backend
+  (VMware ESXi/vCenter is planned for 1.3); the macOS app is not
+  notarized, the Windows program is not signed, no installers yet.
 
 ## 1.1.0 (2026-11-19)
 

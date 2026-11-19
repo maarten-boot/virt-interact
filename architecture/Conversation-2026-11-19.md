@@ -40,3 +40,10 @@ Done:
 **User:** Start SSH works on Linux.
 
 **Claude:** TC-144: Linux pass; Windows open (macOS: no Mac).
+
+**User:** Start SSH works on Windows.
+
+**Claude:** TC-144: Windows pass too. Crosscheck of phase 7 and release 1.2.0 preparation follow (Plan 7.4).
+
+## 5. Release 1.2.0 prepared
+**Claude:** Crosscheck 2026-11-19-02: Spec, Plan and code match for phase 7; one open observation (O1: whether Windows Terminal is detected through its app execution alias). Version 1.2.0; `## 1.2.0 (2026-11-19)` in `Changes.md` (Unreleased kept), README status, Plan 7.4. 152 tests pass; `--version` 1.2.0. The tag `v1.2.0` is the first release published by the new check (TC-123).
