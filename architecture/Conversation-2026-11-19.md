@@ -116,3 +116,8 @@ Done:
 
 ## 18. Release 1.3.0 prepared
 **Claude:** Version 1.3.0; `## 1.3.0 (2026-11-19)` in `Changes.md` (vSphere, config files between versions, `make`, downloads, known limitations: identity-federation accounts not supported, vSphere tried on Linux with the user's ESXi and restricted vCenter, Mac items as before), `## Unreleased` kept; README status; Plan 8.7. Release checks: `--version` 1.3.0, `release_notes.sh 1.3.0` prints only its section, 176 tests pass (with vcsim), clippy clean; phase 8 crosscheck 2026-11-19-03 applied. The tag is published by the pipeline after its file check.
+
+## 19. Release 1.3.0 published; flaky TC-135 on CI
+**User:** Pushed the commits and the tag.
+
+**Claude:** Release run 44617054956 checked six files and three checksums and published v1.3.0 as latest. CI run 44617040664 (`644e364`): the four build jobs passed; `vsphere-sim` failed in TC-135 (`password_never_logged_or_stored`): the capture had only the logout line. Cause (test only, not the app): tracing caches per log statement whether anyone listens; other tests in the binary run in parallel without a logger, so the thread-local capture (`with_default`) missed the login lines. Fixed: the test sets the process-wide logger (which resets that cache) and checks for its own login lines by port; six local runs with 8 test threads pass; it still fails when the login logs the password. Releases: 4 (1.0.0–1.3.0); 122 CI artifacts (1.4 GB), none older than 14 days: no cleanup yet.

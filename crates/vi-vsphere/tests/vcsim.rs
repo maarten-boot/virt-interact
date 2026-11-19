@@ -273,8 +273,14 @@ fn password_never_logged_or_stored() {
         .with_writer(writer)
         .with_ansi(false)
         .finish();
-    let pages = tracing::subscriber::with_default(subscriber, || {
-        // One thread, so every task logs to this subscriber.
+    // The process-wide logger, not a thread-local one: tracing caches per
+    // log statement whether anyone listens, and other tests in this binary
+    // run in parallel without a logger, so a thread-local capture can miss
+    // lines (it did on CI). Setting the global logger resets that cache.
+    // Their lines may end up here too; the passwords below are this test's
+    // own. Only this test sets a logger.
+    tracing::subscriber::set_global_default(subscriber).expect("only this test sets a logger");
+    let pages = {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -298,9 +304,17 @@ fn password_never_logged_or_stored() {
             assert!(!failed.to_string().contains("Wrong-a1b2"), "{failed}");
             pages
         })
-    });
+    };
     let log = String::from_utf8(buf.lock().unwrap().clone()).unwrap();
-    assert!(log.contains("vSphere login"), "the capture works: {log}");
+    let target = format!("target=127.0.0.1:{}", sim.port);
+    assert!(
+        log.lines()
+            .any(|l| l.contains("vSphere login failed") && l.contains(&target))
+            && log
+                .lines()
+                .any(|l| l.contains("vSphere login ") && l.contains(&target)),
+        "the capture works: {log}"
+    );
     for secret in [PW, "Wrong-a1b2"] {
         assert!(!log.contains(secret), "password in the log");
         assert!(!pages.concat().contains(secret), "password in an answer");
