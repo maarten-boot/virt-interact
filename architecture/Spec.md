@@ -2,7 +2,7 @@
 
 Status: draft v1, 2026-11-13.
 
-Items are numbered `SPEC-nnn` so that Plan.md and TestCases.md can refer to them. Each item is tagged with the release it belongs to: **v1** (read-only inventory), **v1.1** (remote viewing), or **later**.
+Items are numbered `SPEC-nnn` so that Plan.md and TestCases.md can refer to them. Each item is tagged with the release it belongs to: **v1** (read-only inventory), **v1.1** (remote viewing), **v1.2** (VMware vSphere, planned), or **later**.
 
 ## 1. Purpose
 virt-interact is a desktop GUI application that connects to remote hosts over SSH with key-based authentication. It builds a read-only inventory of the virtual machines defined on each host: every machine, running or stopped, and the components of each one. A later release adds remote viewing (VNC/SPICE) of running machines, tunnelled through the same SSH connection.

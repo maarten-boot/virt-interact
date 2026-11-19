@@ -4,21 +4,52 @@ Changes between releases. Newest on top.
 
 ## Unreleased
 
+Nothing yet.
+
+## 1.1.0 (2026-11-19)
+
+Adds **VNC and SPICE consoles**: open a running VM's display from the app,
+through the host's SSH connection.
+
 **Consoles**
-- "Open console" in the graphics table of a running VM opens its VNC or
+- "Open console" in the Graphics table of a running VM opens its VNC or
   SPICE console in `remote-viewer` (virt-viewer), through the host's SSH
-  connection; nothing is opened on the host's network. The tunnel closes
-  when the viewer exits, or with "Close console".
+  connection; nothing is opened on the host's network. The app listens on
+  a random port on `127.0.0.1` only.
+- The tunnel lives as long as the viewer: it closes when the viewer exits,
+  or with "Close console". Editing or removing the host, reloading the
+  config and quitting the app close its consoles too.
 - Consoles of VMs on this machine are reached directly, without SSH.
+- When a console cannot be opened, the button is disabled with the reason
+  (VM not running, not reachable remotely, TLS-only, …); errors name the
+  VM and host.
+- A console password, if set, is asked by the viewer; the app never sees it.
 - The viewer is found on your `PATH`, in Homebrew's and MacPorts' folders,
   or on Windows in `Program Files\VirtViewer*`; set `[console] viewer` for
   another one. Install it with your Linux package manager (`virt-viewer`),
-  MacPorts on macOS, or winget / the MSI on Windows (see the README).
-- `virsh` for "This machine" is now also found in `/opt/local/bin` (MacPorts).
+  MacPorts on macOS (`sudo port install virt-viewer`), or on Windows with
+  `winget install RedHat.VirtViewer` or the MSI (see the README).
 
-**Interface**
+**Other changes**
+- `virsh` for "This machine" is now also found in `/opt/local/bin` (MacPorts).
 - New app icon: a blue "V" on a green rounded square (window, Windows
   program, macOS app, Linux menu entry).
+
+**Downloads**
+- As 1.0.0: Linux x86_64 (tar.gz, glibc 2.35 or newer), Windows x86_64
+  (zip), macOS 12+ for Apple Silicon and Intel (app in a zip); each with a
+  `.sha256` file, `LICENSE` (MIT) and the licences of all bundled libraries.
+
+**Known limitations**
+- Consoles were tried with a real host and `remote-viewer` on Linux and
+  Windows; on macOS only the viewer install and search were checked (in
+  CI), not a real console.
+- TLS-only consoles (no plain port) are not supported yet; the viewer is
+  external (no built-in viewer).
+- libvirt (`virsh`) is the only backend; VMware ESXi/vCenter is planned
+  for 1.2.
+- As in 1.0.0: the macOS app is not notarized, the Windows program is not
+  signed, and there are no installers yet.
 
 ## 1.0.0 (2026-11-16)
 
