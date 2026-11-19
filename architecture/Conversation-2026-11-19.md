@@ -104,3 +104,7 @@ Done:
 **User:** vCenter login works.
 
 **Claude:** TC-136: vCenter login pass (the API login takes the same user and password as the SSO web page). Still to confirm for the restricted view: the VMs the user may see are listed and the host shows no error.
+
+**User:** The vCenter shows my VMs, status ok, no warnings.
+
+**Claude:** TC-136 pass (ESXi and restricted vCenter). Crosscheck 2026-11-19-03 of phase 8: C1 Spec says the refresh timeout covers the whole vSphere read, the code applies the command timeout per request; C2 Spec lists fewer CD-ROM/disk cases than the code shows; D1 `known_certs` location wording; D2 unwritable `known_certs` not specified; T1 no test for "expired session → log in again once"; T2 TC-135 (password never logged or saved) still without a test. Fixes proposed; waiting for the user's OK.
