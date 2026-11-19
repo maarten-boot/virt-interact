@@ -76,3 +76,7 @@ Done:
 
 ## 12. Phase 8.6 (part): CI job with vcsim
 **Claude:** `vsphere-sim` job in `ci.yml`: builds vcsim from govmomi `3e19bc8` (Go 1.25), runs the vi-vsphere and vi-backend tests with `VI_VCSIM`, fails if any simulator test was skipped (`pipefail` set, since GitHub's bash has none by default). Checked locally both ways. Open in 8.6: TC-136 (the user's ESXi host and restricted vCenter), crosscheck.
+
+**User:** Pushed 8.5/8.6.
+
+**Claude:** CI run 44595228560 (`59ee007`) passed; run 44596936667 (`b3fd7e9`) passed on all 5 jobs: 173 tests (Windows 161) and the new `vsphere-sim` job (52 tests against vcsim, none skipped). TC-010 and TC-133 updated. Next: TC-136 by the user with that run's archives.
