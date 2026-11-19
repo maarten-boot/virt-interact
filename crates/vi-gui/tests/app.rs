@@ -792,3 +792,42 @@ fn terminal_setting() {
     assert_eq!(app.store.config.terminal.command, None);
     frame(&mut app, &ctx);
 }
+
+// TC-131 (form part): a vSphere host from the form needs a user; the SSH
+// and libvirt fields are not saved for it; no SSH items in its menu.
+#[test]
+fn vsphere_host_form() {
+    use vi_core::config::Backend;
+    let mut f = HostForm::new_host();
+    f.backend = Backend::Vsphere;
+    f.name = "esx".into();
+    f.host = "esx.example.lan".into();
+    f.identity_file = "~/.ssh/id_ed25519".into();
+    f.virsh_prefix = "sudo -n".into();
+    assert_eq!(
+        f.to_host(None).unwrap_err(),
+        "User is required for vSphere."
+    );
+    f.user = "reader".into();
+    let h = f.to_host(None).unwrap();
+    assert_eq!(h.backend, Backend::Vsphere);
+    assert_eq!(h.identity_file, None);
+    assert_eq!(h.virsh_prefix, None);
+    assert_eq!(h.port_or_default(), 443);
+    assert_eq!(HostForm::edit(&h).backend, Backend::Vsphere);
+
+    let dir = tempfile::tempdir().unwrap();
+    let (store, cache) = setup(dir.path());
+    let mut app = App::new(store, vec![], Some(cache));
+    app.host_form = Some(f);
+    app.submit_host_form();
+    assert!(app.host_form.is_none(), "saved");
+    let g = app.host_menu_items("esx");
+    assert_eq!(g.len(), 1, "no SSH items for vSphere");
+    // The form draws with the vSphere fields disabled.
+    let ctx = egui::Context::default();
+    app.apply_theme(&ctx);
+    let esx = app.all_hosts().find(|h| h.name == "esx").unwrap().clone();
+    app.host_form = Some(HostForm::edit(&esx));
+    frame(&mut app, &ctx);
+}

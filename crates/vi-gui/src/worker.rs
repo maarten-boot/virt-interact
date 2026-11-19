@@ -128,6 +128,9 @@ impl Connector for HostConnector {
         prompter: &'a dyn Prompter,
     ) -> BoxFuture<'a, Result<Arc<dyn CommandRunner>, BackendError>> {
         Box::pin(async move {
+            if host.backend == vi_core::config::Backend::Vsphere {
+                return Err(vi_backend::vsphere_not_ready());
+            }
             if host.local {
                 let r = vi_backend::local::LocalRunner::new(Duration::from_secs(
                     ssh.command_timeout_secs.max(1),

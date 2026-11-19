@@ -4,7 +4,11 @@ Changes between releases. Newest on top.
 
 ## Unreleased
 
-Nothing yet.
+**VMware vSphere (in progress, for 1.3)**
+- Hosts can be set to `backend = "vsphere"` (in the config or with the
+  backend choice in the host editor), with `host`, `port` (default 443)
+  and `user`. Reading them is not finished yet.
+- The default `libvirt_uri` is no longer written to the config file.
 
 ## 1.2.0 (2026-11-19)
 

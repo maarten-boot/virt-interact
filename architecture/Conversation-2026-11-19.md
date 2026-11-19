@@ -52,3 +52,8 @@ Done:
 **User:** Pushed the commit and the tag.
 
 **Claude:** CI run 44531403477 (`c984e3f`) passed on all 4 jobs. Release run 44531444697: packaged all platforms, checked the six files and three checksums, and published v1.2.0 as latest by itself (TC-123 pass; Plan 7.4 done). Releases now 3 (v1.0.0, v1.1.0, v1.2.0); CI artifacts: none older than 14 days, so no cleanup yet. The v1.1.0 release title ends with "." (from the hand-made release); can be fixed on GitHub.
+
+## 7. Phase 8 started: 8.1 vSphere host config
+**User:** Continue.
+
+**Claude:** Started phase 8 (vSphere, 1.3). Design for the connection: the worker keeps one "connection" per host; for vSphere it will be an API session (implemented in 8.3), so the worker's flow stays the same. 8.1 done: `Backend::Vsphere` (`backend = "vsphere"`), port 443 by default, validation (user required; `identity_file`, `virsh_prefix`, non-default `libvirt_uri` refused; `password` refused as an unknown key), default `libvirt_uri` no longer written; host editor with a backend choice (rows stay, SSH/libvirt rows disabled for vSphere); no SSH menu items for vSphere hosts; reading a vSphere host says "not finished yet" until 8.3/8.4. 154 tests pass. Tools for the next steps: `go` is installed, so `vcsim` (govmomi's simulator) can be built for tests.

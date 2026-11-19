@@ -11,7 +11,7 @@ use std::sync::mpsc::{Receiver, channel};
 
 use eframe::egui::{self, Color32, RichText};
 use vi_core::cache::{Cache, CachedInventory, format_age, format_utc, now_secs};
-use vi_core::config::{Config, ConfigStore, HostConfig};
+use vi_core::config::{Backend, Config, ConfigStore, HostConfig};
 use vi_core::contrast::{ContrastLevel, MAX_RATIO, MIN_RATIO, Palette};
 use vi_core::model::{Domain, DomainDetails, HostInventory};
 use vi_ssh::Secret;
@@ -104,6 +104,7 @@ enum ContrastChoice {
 pub struct HostForm {
     /// Name of the host being edited; `None` when adding.
     pub original: Option<String>,
+    pub backend: Backend,
     pub name: String,
     pub host: String,
     pub port: String,
@@ -125,6 +126,7 @@ impl HostForm {
     pub fn edit(h: &HostConfig) -> HostForm {
         HostForm {
             original: Some(h.name.clone()),
+            backend: h.backend,
             name: h.name.clone(),
             host: h.host.clone(),
             port: h.port.map(|p| p.to_string()).unwrap_or_default(),
@@ -162,15 +164,28 @@ impl HostForm {
         if self.host.trim().is_empty() {
             return Err("Host is required.".into());
         }
+        let vsphere = self.backend == Backend::Vsphere;
+        if vsphere && self.user.trim().is_empty() {
+            return Err("User is required for vSphere.".into());
+        }
         let mut h = base.cloned().unwrap_or_else(|| HostConfig::new("", ""));
+        h.backend = self.backend;
         h.name = self.name.trim().to_string();
         h.host = self.host.trim().to_string();
         h.port = port;
         h.user = opt(&self.user);
-        h.identity_file = opt(&self.identity_file).map(PathBuf::from);
-        h.libvirt_uri =
-            opt(&self.libvirt_uri).unwrap_or_else(|| HostConfig::new("", "").libvirt_uri);
-        h.virsh_prefix = opt(&self.virsh_prefix);
+        // The SSH/libvirt fields do not apply to vSphere (SPEC-005); what
+        // was typed in them is kept in the form but not saved.
+        let default_uri = HostConfig::new("", "").libvirt_uri;
+        h.identity_file = (!vsphere)
+            .then(|| opt(&self.identity_file).map(PathBuf::from))
+            .flatten();
+        h.libvirt_uri = if vsphere {
+            default_uri
+        } else {
+            opt(&self.libvirt_uri).unwrap_or(default_uri)
+        };
+        h.virsh_prefix = (!vsphere).then(|| opt(&self.virsh_prefix)).flatten();
         Ok(h)
     }
 }
@@ -536,7 +551,9 @@ impl App {
                 },
             ),
         ]];
-        if !cfg.local {
+        // No SSH for this machine, nor for vSphere (the entry's user is an
+        // API account, SPEC-024).
+        if !cfg.local && cfg.backend == Backend::Libvirt {
             groups.push(vec![
                 MenuItem::new("Start SSH", Ok(TreeAction::StartSsh(n))),
                 MenuItem::new(
@@ -1768,30 +1785,75 @@ impl App {
                 egui::Grid::new("host-form-grid")
                     .num_columns(2)
                     .show(ui, |ui| {
-                        let mut field = |label: &str, value: &mut String, hint: &str| {
-                            ui.label(label);
-                            ui.add(
-                                egui::TextEdit::singleline(value)
-                                    .hint_text(hint)
-                                    .desired_width(280.0),
+                        ui.label("Backend");
+                        egui::ComboBox::from_id_salt("host-form-backend")
+                            .width(280.0)
+                            .selected_text(backend_label(form.backend))
+                            .show_ui(ui, |ui| {
+                                for b in [Backend::Libvirt, Backend::Vsphere] {
+                                    ui.selectable_value(&mut form.backend, b, backend_label(b));
+                                }
+                            });
+                        ui.end_row();
+                        let vsphere = form.backend == Backend::Vsphere;
+                        // Every row stays in place for both backends; rows
+                        // that do not apply are disabled (nothing moves).
+                        let mut field =
+                            |label: &str, value: &mut String, hint: &str, enabled: bool| {
+                                ui.label(label);
+                                ui.add_enabled(
+                                    enabled,
+                                    egui::TextEdit::singleline(value)
+                                        .hint_text(hint)
+                                        .desired_width(280.0),
+                                );
+                                ui.end_row();
+                            };
+                        field("Name *", &mut form.name, "display name, unique", true);
+                        if vsphere {
+                            field(
+                                "Host *",
+                                &mut form.host,
+                                "ESXi or vCenter host name or IP",
+                                true,
                             );
-                            ui.end_row();
-                        };
-                        field("Name *", &mut form.name, "display name, unique");
-                        field(
-                            "Host *",
-                            &mut form.host,
-                            "hostname, IP or ~/.ssh/config alias",
-                        );
-                        field("Port", &mut form.port, "from ssh config, else 22");
-                        field("User", &mut form.user, "from ssh config, else local user");
+                            field("Port", &mut form.port, "443", true);
+                            field("User *", &mut form.user, "e.g. reader@vsphere.local", true);
+                        } else {
+                            field(
+                                "Host *",
+                                &mut form.host,
+                                "hostname, IP or ~/.ssh/config alias",
+                                true,
+                            );
+                            field("Port", &mut form.port, "from ssh config, else 22", true);
+                            field(
+                                "User",
+                                &mut form.user,
+                                "from ssh config, else local user",
+                                true,
+                            );
+                        }
+                        let ssh_hint =
+                            |h: &'static str| if vsphere { "not used for vSphere" } else { h };
                         field(
                             "Identity file",
                             &mut form.identity_file,
-                            "agent / ssh config / default keys",
+                            ssh_hint("agent / ssh config / default keys"),
+                            !vsphere,
                         );
-                        field("libvirt URI", &mut form.libvirt_uri, "qemu:///system");
-                        field("virsh prefix", &mut form.virsh_prefix, "e.g. sudo -n");
+                        field(
+                            "libvirt URI",
+                            &mut form.libvirt_uri,
+                            ssh_hint("qemu:///system"),
+                            !vsphere,
+                        );
+                        field(
+                            "virsh prefix",
+                            &mut form.virsh_prefix,
+                            ssh_hint("e.g. sudo -n"),
+                            !vsphere,
+                        );
                     });
                 if let Some(e) = &form.error {
                     ui.label(RichText::new(e).color(err_color));
@@ -1928,6 +1990,13 @@ pub const TREE_PANEL: &str = "tree";
 
 /// Persistent id of a host's node in the tree (also read by the keyboard
 /// navigation to know whether the host is expanded).
+fn backend_label(b: Backend) -> &'static str {
+    match b {
+        Backend::Libvirt => "libvirt (virsh over SSH)",
+        Backend::Vsphere => "VMware vSphere (ESXi or vCenter, HTTPS)",
+    }
+}
+
 fn tree_id(host: &str) -> egui::Id {
     egui::Id::new(("host-tree", host))
 }

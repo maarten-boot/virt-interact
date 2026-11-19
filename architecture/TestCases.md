@@ -163,7 +163,7 @@ Each test case is traced to a Spec item.
 | ID | Type | Description | Where | Status |
 |----|------|-------------|-------|--------|
 | TC-130 | U | Only the allowlisted API methods can be built and sent; any other method is refused before sending (SPEC-021). | `vi-vsphere` unit tests | planned |
-| TC-131 | U | Config: `backend = "vsphere"` needs `user`, default port 443, refuses `identity_file`/`libvirt_uri`/`virsh_prefix`; a password key in the file is refused (SPEC-005, SPEC-022). | `vi-core config::tests` | planned |
+| TC-131 | U | Config: `backend = "vsphere"` needs `user`, default port 443, refuses `identity_file`/`virsh_prefix`/a non-default `libvirt_uri`; a password key in the file is refused; round-trips without `libvirt_uri`. Host form: backend choice, user required for vSphere, SSH/libvirt fields not saved for it; no SSH menu items (SPEC-005, SPEC-022, SPEC-024). | `vi-core config::tests::vsphere_hosts`, `vi-gui tests/app.rs vsphere_host_form` | pass (2026-11-19) |
 | TC-132 | U | Mapping of recorded responses (ESXi and vCenter, anonymised) to the model: states, guest OS, firmware, disks, NICs, other devices, datacenter/cluster/host; templates marked; missing properties shown as unknown (SPEC-021). | fixtures | planned |
 | TC-133 | I | Against vcsim in ESXi and in vCenter mode: login, full inventory with paging, logout; wrong password gives "login failed" without retry; an expired session asks again (SPEC-021, 022). | CI job | planned |
 | TC-134 | U/I | Certificates: system-trusted accepted; unknown shown with fingerprint, accepted → stored in `known_certs` (0600) and trusted next time; rejected → aborted; changed fingerprint refused; TLS < 1.2 refused (SPEC-023). | `vi-vsphere` tests with a local TLS server | planned |

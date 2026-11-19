@@ -158,9 +158,15 @@ impl Default for LoggingConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Backend {
+    /// virsh over SSH (or locally, SPEC-020).
     #[default]
     Libvirt,
+    /// VMware ESXi or vCenter through the vSphere API (SPEC-021, v1.3).
+    Vsphere,
 }
+
+/// The default HTTPS port of the vSphere API.
+pub const DEFAULT_VSPHERE_PORT: u16 = 443;
 
 /// One remote host (SPEC-005).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -181,7 +187,10 @@ pub struct HostConfig {
     pub identity_file: Option<PathBuf>,
     #[serde(default)]
     pub backend: Backend,
-    #[serde(default = "default_libvirt_uri")]
+    #[serde(
+        default = "default_libvirt_uri",
+        skip_serializing_if = "is_default_uri"
+    )]
     pub libvirt_uri: String,
     /// Command prefix such as `"sudo -n"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -194,6 +203,10 @@ pub struct HostConfig {
 
 fn default_libvirt_uri() -> String {
     DEFAULT_LIBVIRT_URI.into()
+}
+
+fn is_default_uri(uri: &str) -> bool {
+    uri == DEFAULT_LIBVIRT_URI
 }
 
 impl HostConfig {
@@ -235,7 +248,10 @@ impl HostConfig {
 
     /// The port when no ssh config value applies.
     pub fn port_or_default(&self) -> u16 {
-        self.port.unwrap_or(DEFAULT_SSH_PORT)
+        self.port.unwrap_or(match self.backend {
+            Backend::Libvirt => DEFAULT_SSH_PORT,
+            Backend::Vsphere => DEFAULT_VSPHERE_PORT,
+        })
     }
 }
 
@@ -384,6 +400,31 @@ impl Config {
                     "host \"{}\": libvirt_uri must not be empty",
                     h.name
                 )));
+            }
+            if h.backend == Backend::Vsphere {
+                // SPEC-005 (v1.3): API login with user and password; the
+                // SSH and libvirt fields do not apply.
+                let not_used = |field: &str| {
+                    invalid(format!(
+                        "host \"{}\": {field} is not used with backend = \"vsphere\"",
+                        h.name
+                    ))
+                };
+                if h.user.as_deref().is_none_or(|u| u.trim().is_empty()) {
+                    return Err(invalid(format!(
+                        "host \"{}\": backend = \"vsphere\" needs a user",
+                        h.name
+                    )));
+                }
+                if h.identity_file.is_some() {
+                    return Err(not_used("identity_file"));
+                }
+                if h.virsh_prefix.is_some() {
+                    return Err(not_used("virsh_prefix"));
+                }
+                if h.libvirt_uri != DEFAULT_LIBVIRT_URI {
+                    return Err(not_used("libvirt_uri"));
+                }
             }
             if !seen.insert(h.name.as_str()) {
                 return Err(invalid(format!("duplicate host name \"{}\"", h.name)));
@@ -629,6 +670,50 @@ virsh_prefix = "sudo -n"
             }
             other => panic!("expected parse error, got {other:?}"),
         }
+    }
+
+    // TC-131: a vSphere host needs a user, defaults to port 443, refuses
+    // the SSH/libvirt fields and any password key; it round-trips.
+    #[test]
+    fn vsphere_hosts() {
+        let base = "[[hosts]]\nname = \"esx\"\nhost = \"esx.example.lan\"\nbackend = \"vsphere\"\n";
+        let ok = format!("{base}user = \"reader\"\n");
+        let (cfg, _) = Config::parse(&ok, p()).unwrap();
+        cfg.validate(p()).unwrap();
+        let h = &cfg.hosts[0];
+        assert_eq!(h.backend, Backend::Vsphere);
+        assert_eq!(h.port_or_default(), 443);
+        let text = cfg.to_toml().unwrap();
+        let host_part = text.split("[[hosts]]").nth(1).unwrap();
+        assert!(
+            host_part.contains("backend = \"vsphere\"") && !host_part.contains("libvirt_uri"),
+            "{text}"
+        );
+        assert_eq!(Config::parse(&text, p()).unwrap().0, cfg);
+        let refused = |extra: &str, part: &str| {
+            let r =
+                Config::parse(&format!("{base}{extra}"), p()).and_then(|(c, _)| c.validate(p()));
+            match r {
+                Err(e) => assert!(e.to_string().contains(part), "{extra}: {e}"),
+                Ok(()) => panic!("{extra}: accepted"),
+            }
+        };
+        refused("", "needs a user");
+        refused("user = \" \"\n", "needs a user");
+        refused(
+            "user = \"r\"\nidentity_file = \"~/k\"\n",
+            "identity_file is not used",
+        );
+        refused(
+            "user = \"r\"\nvirsh_prefix = \"sudo -n\"\n",
+            "virsh_prefix is not used",
+        );
+        refused(
+            "user = \"r\"\nlibvirt_uri = \"qemu:///session\"\n",
+            "libvirt_uri is not used",
+        );
+        // SPEC-022: a password is never in the file.
+        refused("user = \"r\"\npassword = \"x\"\n", "password");
     }
 
     // TC-023

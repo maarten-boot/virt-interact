@@ -70,7 +70,7 @@ Each host has these fields:
 | `virsh_prefix` | no | none | Command prefix, e.g. `"sudo -n"`; plain characters only (SPEC-011) |
 
 - Hosts can be added, edited and removed in the GUI. Changes are saved to the config file.
-- v1.3: a `vsphere` host uses `host`, `port` (default 443) and `user` (required); `identity_file`, `libvirt_uri` and `virsh_prefix` are refused for it, and SSH config (SPEC-007) does not apply. Its password is never in the file (SPEC-022).
+- v1.3: a `vsphere` host uses `host`, `port` (default 443) and `user` (required); `identity_file`, `virsh_prefix` and a `libvirt_uri` other than the default are refused for it (the default `libvirt_uri` is no longer written to the file), and SSH config (SPEC-007) does not apply. Its password is never in the file (SPEC-022).
 - Host names must be unique and not empty; `host` must not be empty. Names starting with `@` are reserved for the local entries (SPEC-020).
 - The GUI and the file stay consistent: a host added in the file appears after a reload.
 
@@ -282,7 +282,7 @@ Scope of an error:
   - "Copy name", "Copy UUID" (disabled when the UUID is unknown).
 - **Host menu:**
   - "Refresh" (disabled while the host is being read), "Edit…", "Remove…" (as the existing buttons; disabled for the local entries, SPEC-020).
-  - "Start SSH" and "Copy ssh command" (SPEC-025); not shown for the local entries.
+  - "Start SSH" and "Copy ssh command" (SPEC-025); not shown for the local entries, nor for vSphere hosts (v1.3: their user is an API account).
 
 ### SPEC-025: SSH to a host in a terminal (v1.2)
 - "Start SSH" opens a terminal window running the system OpenSSH client: `ssh [-p <port>] [-l <user>] [-i <identity_file>] -- <host>`, with only the values set in the app's host entry; everything else (aliases, `ProxyJump`, known hosts, agent) comes from the user's own `~/.ssh/config`. This is the user's own interactive session: the app does not see it, and the key-only rule (SPEC-006) does not apply to it (ssh may ask for a password).

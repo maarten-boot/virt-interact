@@ -60,7 +60,14 @@ pub fn for_host_with(
             }
             Ok(Box::new(b))
         }
+        // Phase 8 in progress: the backend arrives with 8.3/8.4.
+        Backend::Vsphere => Err(vsphere_not_ready()),
     }
+}
+
+/// Until the vSphere backend is complete (Plan 8.3/8.4).
+pub fn vsphere_not_ready() -> BackendError {
+    BackendError::Config("reading vSphere hosts is not finished yet (planned for 1.3)".into())
 }
 
 #[cfg(test)]

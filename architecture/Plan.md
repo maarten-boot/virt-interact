@@ -115,7 +115,7 @@ Decided 2026-11-19: menus on VMs (consoles, close, copy name/UUID) and hosts (re
 
 ### Phase 8: v1.3 VMware vSphere (SPEC-021, 022, 023)
 Decided 2026-11-18: password asked per app session and kept only in memory; flat tree with datacenter/cluster/ESXi host as VM fields; after release 1.1 (2026-11-19: moved to 1.3, after the tree menus). Tests: vcsim (govmomi's vSphere simulator, ESXi and vCenter mode) in CI, recorded SOAP responses as fixtures; manual check on the user's ESXi host and a vCenter with a restricted view.
-- [ ] 8.1 Config: `backend = "vsphere"`, field rules (SPEC-005); host editor shows only the fields of the chosen backend.
+- [x] 8.1 Config: `backend = "vsphere"`, field rules (SPEC-005), port 443; host editor with a backend choice, the SSH/libvirt rows disabled for vSphere (rows never move); no SSH menu items for vSphere hosts; reading one says "not finished yet" until 8.3/8.4; tests TC-131 (2026-11-19).
 - [ ] 8.2 HTTPS client: rustls (ring) on tokio; certificate check and `known_certs` with the accept dialog (SPEC-023).
 - [ ] 8.3 SOAP layer with the method allowlist; Login/Logout, session kept per host and ended on forget/reload/quit; password dialog (SPEC-022).
 - [ ] 8.4 Inventory: PropertyCollector traversal (paged), mapping to the model, permission gaps tolerated (SPEC-021); fixtures from vcsim and from real ESXi/vCenter responses (anonymised).
