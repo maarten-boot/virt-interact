@@ -44,6 +44,12 @@ cargo build --release
 ./target/release/virt-interact
 ```
 
+On Linux and macOS the `Makefile` has shortcuts: `make run` (build the
+release binary if anything changed, then start it; `make run ARGS="--config
+/tmp/test.toml"`), `make dev` (debug build), `make test`, `make lint`,
+`make check` (both), and `make test-vcsim VCSIM=/path/to/vcsim` for the
+vSphere simulator tests.
+
 Linux build dependencies (Debian/Ubuntu):
 
 ```sh

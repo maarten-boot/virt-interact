@@ -80,3 +80,12 @@ Done:
 **User:** Pushed 8.5/8.6.
 
 **Claude:** CI run 44595228560 (`59ee007`) passed; run 44596936667 (`b3fd7e9`) passed on all 5 jobs: 173 tests (Windows 161) and the new `vsphere-sim` job (52 tests against vcsim, none skipped). TC-010 and TC-133 updated. Next: TC-136 by the user with that run's archives.
+
+## 13. Old app, newer config file; Makefile
+**User:** What do we do with older toml files? `config.toml:17:2: unknown field 'console', expected one of ui, ssh, logging, local, hosts. Using defaults; changes will not be saved.`
+
+**Claude:** Not an old file: an old program (1.0.x, whose list has no `console`) reading a file saved by 1.1 or later, which writes `[console]`/`[terminal]` even when empty. 1.0.0 behaved safely (defaults, no save). Proposed: (1) write sections only when they hold a setting; (2) future versions accept unknown top-level sections with a warning and keep them on save (toml_edit). Waiting for the user's choice.
+
+**User:** Always rebuild the binary at `target/release` in the repo; or add a top-level Makefile for `make run` during testing.
+
+**Claude:** Added `Makefile` (release, run [ARGS=…], dev, test, test-vcsim VCSIM=…, lint, fmt, check) and a README note; the release binary is rebuilt in the repo's `target/release` after code changes (saved as a working preference).
