@@ -7,12 +7,13 @@
 use std::sync::Mutex;
 use std::time::Duration;
 
-use bytes::Bytes;
+use bytes::Buf;
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::client::conn::http1::SendRequest;
 use hyper_util::rt::TokioIo;
 
 use crate::error::VsphereError;
+use crate::soap::{Request, SOAP_ACTION};
 use crate::tls::{self, TlsOptions};
 
 /// Larger answers are refused (a vCenter inventory is a few MB).
@@ -23,7 +24,7 @@ pub struct SoapHttp {
     port: u16,
     opts: TlsOptions,
     timeout: Duration,
-    conn: tokio::sync::Mutex<Option<SendRequest<Full<Bytes>>>>,
+    conn: tokio::sync::Mutex<Option<SendRequest<Full<WipedBuf>>>>,
     cookie: Mutex<Option<String>>,
 }
 
@@ -62,7 +63,7 @@ impl SoapHttp {
         Ok(())
     }
 
-    async fn open(&self) -> Result<SendRequest<Full<Bytes>>, VsphereError> {
+    async fn open(&self) -> Result<SendRequest<Full<WipedBuf>>, VsphereError> {
         let stream = tls::connect(&self.host, self.port, &self.opts).await?;
         let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
             .await
@@ -83,17 +84,18 @@ impl SoapHttp {
         }
     }
 
-    /// POST a SOAP envelope; any HTTP status is returned (SOAP faults come
+    /// POST a SOAP request; any HTTP status is returned (SOAP faults come
     /// with 500).
-    pub async fn post(&self, body: &str, soap_action: &str) -> Result<Response, VsphereError> {
+    /// Only a [`Request`] can be sent: the allowlist (SPEC-021, TC-130).
+    pub async fn post(&self, request: &Request) -> Result<Response, VsphereError> {
         let secs = self.timeout.as_secs().max(1);
         let t = self.target();
-        tokio::time::timeout(self.timeout, self.post_inner(body, soap_action))
+        tokio::time::timeout(self.timeout, self.post_inner(request))
             .await
             .map_err(|_| VsphereError::Timeout { target: t, secs })?
     }
 
-    async fn post_inner(&self, body: &str, soap_action: &str) -> Result<Response, VsphereError> {
+    async fn post_inner(&self, request: &Request) -> Result<Response, VsphereError> {
         let mut guard = self.conn.lock().await;
         let mut retried = false;
         loop {
@@ -104,12 +106,12 @@ impl SoapHttp {
             let mut req = hyper::Request::post("/sdk")
                 .header(hyper::header::HOST, self.target())
                 .header(hyper::header::CONTENT_TYPE, "text/xml; charset=utf-8")
-                .header("SOAPAction", soap_action);
+                .header("SOAPAction", SOAP_ACTION);
             if let Some(c) = self.cookie() {
                 req = req.header(hyper::header::COOKIE, c);
             }
             let req = req
-                .body(Full::new(Bytes::from(body.to_string())))
+                .body(Full::new(WipedBuf::new(request.bytes())))
                 .map_err(|e| self.http_err(e.to_string()))?;
             let sent = match sender.ready().await {
                 Ok(()) => sender.send_request(req).await,
@@ -151,6 +153,45 @@ impl SoapHttp {
     pub async fn close(&self) {
         *self.conn.lock().await = None;
         *self.cookie.lock().expect("lock") = None;
+    }
+}
+
+/// A request body that is wiped when hyper drops it (the login request
+/// holds the password). Copies inside the HTTP/TLS libraries' own buffers
+/// are outside the app's control (SPEC-022).
+pub(crate) struct WipedBuf {
+    data: Vec<u8>,
+    pos: usize,
+}
+
+impl WipedBuf {
+    fn new(bytes: &[u8]) -> WipedBuf {
+        WipedBuf {
+            data: bytes.to_vec(),
+            pos: 0,
+        }
+    }
+}
+
+impl Buf for WipedBuf {
+    fn remaining(&self) -> usize {
+        self.data.len() - self.pos
+    }
+
+    fn chunk(&self) -> &[u8] {
+        &self.data[self.pos..]
+    }
+
+    fn advance(&mut self, n: usize) {
+        self.pos = (self.pos + n).min(self.data.len());
+    }
+}
+
+impl Drop for WipedBuf {
+    fn drop(&mut self) {
+        for b in self.data.iter_mut() {
+            *b = std::hint::black_box(0);
+        }
     }
 }
 

@@ -320,7 +320,12 @@ impl App {
         let c1 = ctx.clone();
         let notify: Arc<dyn Fn() + Send + Sync> = Arc::new(move || c1.request_repaint());
         let prompter = Arc::new(GuiPrompter::new(ptx, notify.clone()));
-        let (worker, events) = Worker::new(Arc::new(HostConnector::new()), prompter, notify);
+        let mut connector = HostConnector::new();
+        // known_certs lives next to the config file in use (also --config).
+        if let Some(dir) = self.store.path.parent() {
+            connector.known_certs = dir.join("known_certs");
+        }
+        let (worker, events) = Worker::new(Arc::new(connector), prompter, notify);
         self.with_worker(worker, events, prx)
     }
 

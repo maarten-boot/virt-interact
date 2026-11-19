@@ -19,6 +19,7 @@ path = "src/main.rs"
 vi-core.workspace = true
 vi-ssh.workspace = true
 vi-backend.workspace = true
+vi-vsphere.workspace = true
 eframe.workspace = true
 tracing.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "process", "io-util", "net"] }

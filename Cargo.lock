@@ -5263,6 +5263,7 @@ dependencies = [
  "tracing-subscriber",
  "vi-core",
  "vi-ssh",
+ "vi-vsphere",
 ]
 
 [[package]]
@@ -5293,6 +5294,7 @@ dependencies = [
  "vi-backend",
  "vi-core",
  "vi-ssh",
+ "vi-vsphere",
  "winresource",
 ]
 
@@ -5323,6 +5325,7 @@ dependencies = [
  "hyper-util",
  "rcgen",
  "ring",
+ "roxmltree",
  "rustls",
  "rustls-native-certs",
  "tempfile",

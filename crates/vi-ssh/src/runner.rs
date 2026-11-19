@@ -74,6 +74,13 @@ pub trait CommandRunner: Send + Sync {
             })
         })
     }
+
+    /// The connection itself, for a backend with its own session type
+    /// (vSphere, SPEC-021) that is kept like an SSH session. Shell runners
+    /// give `None`.
+    fn as_any(&self) -> Option<&(dyn std::any::Any + Send + Sync)> {
+        None
+    }
 }
 
 /// Canned responses per exact command line; records every command it gets.

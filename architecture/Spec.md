@@ -263,8 +263,8 @@ Scope of an error:
 - Large inventories are read in pages (`ContinueRetrievePropertiesEx`); the refresh timeout (SPEC-012) applies to the whole read.
 
 ### SPEC-022: vSphere login with user and password (v1.3)
-- The password is asked when the host is first read in an app session (the same dialog style as an SSH key passphrase), used once for `Login`, then wiped (zeroized). It is never written to the config, the cache, or logs.
-- The session (its cookie) is kept in memory while the app runs, like a kept SSH connection (SPEC-006): a later refresh does not ask again. It is ended with `Logout` when the host is edited or removed, when the config is reloaded, and when the app quits. An expired session is replaced by asking for the password again.
+- The password is asked when the host is first read in an app session (the same dialog style as an SSH key passphrase), used once for `Login`, then wiped: the app's copies (the typed text, the request body) are zeroed; copies inside the HTTP/TLS libraries' own buffers are outside its control. It is never written to the config, the cache, or logs.
+- The session (its cookie) is kept in memory while the app runs, like a kept SSH connection (SPEC-006): a later refresh does not ask again. It is ended with `Logout` when the host is edited or removed, when the config is reloaded, and when the app quits (best effort: the app does not wait for the answer). An expired session (`NotAuthenticated`) is replaced once by logging in again, which asks for the password. The password is asked at most three times per login; a refused one shows "Login failed" in the dialog.
 - A wrong user or password gives "login failed" without saying which was wrong; the app does not retry on its own (no account lockout from retries).
 - Remembering the password in the OS keychain is not in v1.3 (later, optional).
 

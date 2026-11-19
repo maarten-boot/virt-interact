@@ -35,6 +35,10 @@ pub enum BackendError {
 
     #[error("invalid host configuration: {0}")]
     Config(String),
+
+    /// vSphere API failure (SPEC-021..023).
+    #[error(transparent)]
+    Vsphere(#[from] vi_vsphere::VsphereError),
 }
 
 /// Error category, for the GUI (SPEC-013).
@@ -71,6 +75,29 @@ impl BackendError {
             BackendError::Parse { .. } => BackendErrorKind::Parse,
             BackendError::Config(_) => BackendErrorKind::Config,
             BackendError::CommandFailed { .. } => BackendErrorKind::Other,
+            BackendError::Vsphere(v) => {
+                use vi_vsphere::VsphereError as V;
+                match v {
+                    V::Connect { .. } | V::Http { .. } => BackendErrorKind::Connection,
+                    V::Timeout { .. } => BackendErrorKind::Timeout,
+                    V::UnknownCertificate { .. }
+                    | V::CertificateChanged { .. }
+                    | V::CertificateRejected { .. }
+                    | V::Tls { .. } => BackendErrorKind::HostKey,
+                    V::LoginCancelled { .. } | V::LoginFailed { .. } => {
+                        BackendErrorKind::Authentication
+                    }
+                    // An expired session: the worker logs in again once.
+                    V::Fault { kind, .. } if kind == "NotAuthenticated" => {
+                        BackendErrorKind::Connection
+                    }
+                    V::Fault { kind, .. } if kind == "NoPermission" => {
+                        BackendErrorKind::PermissionDenied
+                    }
+                    V::Parse { .. } => BackendErrorKind::Parse,
+                    V::Fault { .. } | V::KnownCerts { .. } => BackendErrorKind::Other,
+                }
+            }
         }
     }
 

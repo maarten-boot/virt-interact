@@ -9,7 +9,7 @@
 //!   external viewer; the tunnel lives as long as the viewer.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -103,13 +103,19 @@ pub trait Connector: Send + Sync {
 /// every other host over SSH with the user's ssh config and known_hosts.
 pub struct HostConnector {
     pub known_hosts: PathBuf,
+    /// Pinned vSphere certificates (SPEC-023), next to the config file.
+    pub known_certs: PathBuf,
 }
 
 impl HostConnector {
     pub fn new() -> HostConnector {
+        let config_dir = vi_core::paths::default_config_path()
+            .and_then(|p| p.parent().map(Path::to_path_buf))
+            .unwrap_or_default();
         HostConnector {
             known_hosts: ConnectOptions::default_known_hosts()
                 .unwrap_or_else(|| PathBuf::from("known_hosts")),
+            known_certs: config_dir.join("known_certs"),
         }
     }
 }
@@ -129,7 +135,23 @@ impl Connector for HostConnector {
     ) -> BoxFuture<'a, Result<Arc<dyn CommandRunner>, BackendError>> {
         Box::pin(async move {
             if host.backend == vi_core::config::Backend::Vsphere {
-                return Err(vi_backend::vsphere_not_ready());
+                // SPEC-021/022: an API session, kept like an SSH session.
+                let s = vi_vsphere::Settings {
+                    name: host.display_name(),
+                    host: host.host.clone(),
+                    port: host.port_or_default(),
+                    user: host.user.clone().unwrap_or_default(),
+                    tls: vi_vsphere::TlsOptions {
+                        known: vi_vsphere::KnownCerts::new(self.known_certs.clone()),
+                        extra_roots: Vec::new(),
+                        connect_timeout: Duration::from_secs(ssh.connect_timeout_secs.max(1)),
+                    },
+                    timeout: Duration::from_secs(ssh.command_timeout_secs.max(1)),
+                };
+                let session = vi_vsphere::VsphereSession::connect(&s, prompter)
+                    .await
+                    .map_err(BackendError::from)?;
+                return Ok(Arc::new(session) as Arc<dyn CommandRunner>);
             }
             if host.local {
                 let r = vi_backend::local::LocalRunner::new(Duration::from_secs(
@@ -651,10 +673,16 @@ impl Drop for ViewerGroup {
 
 /// SSH-level failures after which the connection is not reused.
 fn connection_lost(e: &BackendError) -> bool {
-    matches!(
-        e.kind(),
-        BackendErrorKind::Connection | BackendErrorKind::Other
-    ) && matches!(e, BackendError::Ssh(_))
+    match e {
+        BackendError::Ssh(_) => matches!(
+            e.kind(),
+            BackendErrorKind::Connection | BackendErrorKind::Other
+        ),
+        // Connection gone or session expired (NotAuthenticated): log in
+        // again, which asks for the password (SPEC-022).
+        BackendError::Vsphere(_) => e.kind() == BackendErrorKind::Connection,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -887,6 +915,7 @@ mod tests {
         let local = cfg.local_hosts(false).remove(0);
         let c = HostConnector {
             known_hosts: PathBuf::from("/nonexistent/known_hosts"),
+            known_certs: PathBuf::from("/nonexistent/known_certs"),
         };
         rt.block_on(async {
             let r = c

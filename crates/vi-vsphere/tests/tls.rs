@@ -10,6 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use vi_vsphere::http::SoapHttp;
 use vi_vsphere::known_certs::format_fingerprint;
+use vi_vsphere::soap::Request;
 use vi_vsphere::tls::{self, sha256};
 use vi_vsphere::{KnownCerts, TlsOptions, VsphereError};
 
@@ -126,10 +127,10 @@ async fn unknown_then_pinned_then_changed() {
         .add(&tls::target("127.0.0.1", addr.port()), &fp)
         .unwrap();
     let http = SoapHttp::new("127.0.0.1", addr.port(), o.clone(), Duration::from_secs(5));
-    let r = http.post("<x/>", "urn:vim25/8.0").await.unwrap();
+    let r = http.post(&Request::service_content()).await.unwrap();
     assert_eq!((r.status, r.body.as_str()), (200, "cookie=none"));
     assert_eq!(http.cookie().as_deref(), Some("vmware_soap_session=\"s1\""));
-    let r = http.post("<x/>", "urn:vim25/8.0").await.unwrap();
+    let r = http.post(&Request::service_content()).await.unwrap();
     assert_eq!(r.body, "cookie=vmware_soap_session=\"s1\"");
 
     // A different pin: the certificate "changed" and is refused.

@@ -39,6 +39,30 @@ pub enum VsphereError {
     #[error("{target} did not answer within {secs} s")]
     Timeout { target: String, secs: u64 },
 
+    /// The user rejected the certificate.
+    #[error("the certificate of {target} was not accepted")]
+    CertificateRejected { target: String },
+
+    /// The password question was cancelled.
+    #[error("login to {target} cancelled")]
+    LoginCancelled { target: String },
+
+    /// Wrong user or password (the server does not say which).
+    #[error("login to {target} as {user} failed (wrong user or password)")]
+    LoginFailed { target: String, user: String },
+
+    /// A SOAP fault, e.g. `NotAuthenticated` for an expired session.
+    #[error("{target}: {kind}: {message}")]
+    Fault {
+        target: String,
+        kind: String,
+        message: String,
+    },
+
+    /// An answer that cannot be read.
+    #[error("{target}: {reason}")]
+    Parse { target: String, reason: String },
+
     /// `known_certs` could not be read or written.
     #[error("{file}: {reason}")]
     KnownCerts { file: String, reason: String },

@@ -5,8 +5,11 @@
 pub mod error;
 pub mod http;
 pub mod known_certs;
+pub mod session;
+pub mod soap;
 pub mod tls;
 
 pub use error::VsphereError;
 pub use known_certs::KnownCerts;
+pub use session::{About, Settings, VsphereSession};
 pub use tls::{CertInfo, TlsOptions};
