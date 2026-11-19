@@ -108,10 +108,10 @@ Decided 2026-11-19: menus on VMs (consoles, close, copy name/UUID) and hosts (re
 - [x] 7.1 Right-click menus on VMs and hosts (SPEC-024): menu items as data (`vm_menu_items`, `host_menu_items`), drawn with egui context menus; tests TC-140, TC-141; checked under Xvfb (2026-11-19).
 - [x] 7.2 SSH command and terminal launch per platform (`vi-gui::terminal`); `[terminal] command`; Settings field with the terminal in use; tests TC-142, TC-143; under Xvfb a configured stand-in terminal got `-e ssh -l ops -- <host>` (2026-11-19). TC-144: Linux and Windows pass (2026-11-19).
 - [x] 7.3 Release pipeline: `scripts/publish_release.sh` checks the six files and checksums, then publishes as latest; tried against v1.0.0 and v1.1.0 (publish step stubbed) and with a missing file (refused) (2026-11-19). Open: TC-123 on the next tag.
-- [ ] 7.4 Release 1.2.0:
+- [x] 7.4 Release 1.2.0 (tagged and published 2026-11-19):
   - [x] crosscheck of phase 7 and release check (2026-11-19-02);
   - [x] version 1.2.0, `## 1.2.0` in `Changes.md` (Unreleased kept on top), README status (2026-11-19);
-  - [ ] the user pushes tag `v1.2.0`; the pipeline checks the files and publishes (first run of TC-123).
+  - [x] the user pushed tag `v1.2.0`; Release run 44531444697 checked the six files and three checksums and published it as latest (TC-123).
 
 ### Phase 8: v1.3 VMware vSphere (SPEC-021, 022, 023)
 Decided 2026-11-18: password asked per app session and kept only in memory; flat tree with datacenter/cluster/ESXi host as VM fields; after release 1.1 (2026-11-19: moved to 1.3, after the tree menus). Tests: vcsim (govmomi's vSphere simulator, ESXi and vCenter mode) in CI, recorded SOAP responses as fixtures; manual check on the user's ESXi host and a vCenter with a restricted view.

@@ -47,3 +47,8 @@ Done:
 
 ## 5. Release 1.2.0 prepared
 **Claude:** Crosscheck 2026-11-19-02: Spec, Plan and code match for phase 7; one open observation (O1: whether Windows Terminal is detected through its app execution alias). Version 1.2.0; `## 1.2.0 (2026-11-19)` in `Changes.md` (Unreleased kept), README status, Plan 7.4. 152 tests pass; `--version` 1.2.0. The tag `v1.2.0` is the first release published by the new check (TC-123).
+
+## 6. Release 1.2.0 published by the pipeline
+**User:** Pushed the commit and the tag.
+
+**Claude:** CI run 44531403477 (`c984e3f`) passed on all 4 jobs. Release run 44531444697: packaged all platforms, checked the six files and three checksums, and published v1.2.0 as latest by itself (TC-123 pass; Plan 7.4 done). Releases now 3 (v1.0.0, v1.1.0, v1.2.0); CI artifacts: none older than 14 days, so no cleanup yet. The v1.1.0 release title ends with "." (from the hand-made release); can be fixed on GitHub.
