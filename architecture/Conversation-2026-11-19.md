@@ -89,3 +89,8 @@ Done:
 **User:** Always rebuild the binary at `target/release` in the repo; or add a top-level Makefile for `make run` during testing.
 
 **Claude:** Added `Makefile` (release, run [ARGS=…], dev, test, test-vcsim VCSIM=…, lint, fmt, check) and a README note; the release binary is rebuilt in the repo's `target/release` after code changes (saved as a working preference).
+
+## 14. TC-136: ESXi
+**User:** ESXi works. The vCenter allows only its web SSO login page (SAML2) with a supported browser, so it cannot be tested.
+
+**Claude:** TC-136: ESXi pass. That page is vCenter's standard login page for every vSphere Client login; the app logs in through the API (`/sdk`) with the same user and password, so it may still work: to be tried in the app (user written in full, e.g. `user@domain`). If the password is refused, the vCenter likely uses identity federation (external identity provider), whose accounts have no API password: then a known limitation for 1.3, and token-based login a separate later feature. The vCenter's host name is not recorded in the repo.
