@@ -4,24 +4,59 @@ Changes between releases. Newest on top.
 
 ## Unreleased
 
-**VMware vSphere (in progress, for 1.3)**
-- ESXi hosts and vCenter servers: `backend = "vsphere"` (in the config or
-  with the backend choice in the host editor), with `host`, `port`
-  (default 443) and `user`. The inventory is read through the read-only
-  vSphere API; the password is asked once per session and never stored.
-- Self-signed certificates are shown with their fingerprint and pinned in
-  `known_certs` when accepted; a changed certificate is refused.
-- VM pages show datacenter, cluster, ESXi host, hardware version and VMware
-  Tools; templates are marked. No consoles for vSphere VMs.
-- The default `libvirt_uri` is no longer written to the config file.
+Nothing yet.
+
+## 1.3.0 (2026-11-19)
+
+Adds **VMware ESXi and vCenter**: their VMs in the same tree as your
+libvirt hosts, read through the read-only vSphere API.
+
+**VMware vSphere**
+- Add an ESXi host or a vCenter with `backend = "vsphere"` (in the config,
+  or with the new backend choice in **Add host…**), with `host`, `port`
+  (default 443) and `user`.
+- Read-only by construction: the app can only log in, read properties and
+  log out. A user with the vSphere **Read-only** role is enough; VMs the
+  user may not see are simply not listed, and that is not an error.
+- The password is asked when the host is first read, at most three times
+  ("Login failed" on a retry), and never stored or logged; the session is
+  kept while the app runs and logged out when the host is edited or
+  removed. The same user and password as the vSphere Client login work,
+  also when that login goes through vCenter's single sign-on page.
+- Self-signed certificates (the ESXi/vCenter default) are shown with their
+  SHA-256 fingerprint; accepted ones are pinned in `known_certs` next to
+  the config file, and a changed certificate is refused.
+- Each VM shows its datacenter, cluster, ESXi host, hardware version and
+  VMware Tools status, CPUs, memory, disks (datastore path, thin or thick,
+  size), network adapters (port group or distributed port group, MAC) and
+  other devices; templates are marked. Consoles are not available for
+  vSphere VMs (ESXi 7.0 and later have no VNC server).
 
 **Config file between versions**
 - Empty `[console]` and `[terminal]` sections are no longer written, so a
   config saved by this version can still be read by 1.0 as long as no
-  console viewer or terminal is set. (1.1 and 1.2 wrote them always, and
+  console viewer or terminal is set. (1.1 and 1.2 always wrote them, and
   1.0 refuses a file that has them: "unknown field `console`".)
 - From this version on, a section the app does not know (written by a
   newer version) gives a warning and is kept when the config is saved.
+- The default `libvirt_uri` is no longer written to the config file.
+
+**Development**
+- `make run`, `make dev`, `make test`, `make check` (Linux/macOS).
+
+**Downloads**
+- As before: Linux x86_64 (tar.gz, glibc 2.35 or newer), Windows x86_64
+  (zip), macOS 12+ for Apple Silicon and Intel (app in a zip); each with a
+  `.sha256` file, `LICENSE` (MIT) and the licences of all bundled libraries.
+
+**Known limitations**
+- vSphere was tried with a real ESXi host and a vCenter with a restricted
+  view (Linux); in CI against VMware's simulator on every push. Accounts
+  that can only sign in through an external identity provider (identity
+  federation) are not supported: they have no password the API accepts.
+- As in 1.2.0: consoles and Start SSH untested on a real Mac; TLS-only
+  consoles and a built-in viewer are not supported; the macOS app is not
+  notarized, the Windows program is not signed, no installers yet.
 
 ## 1.2.0 (2026-11-19)
 

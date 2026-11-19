@@ -113,3 +113,6 @@ Done:
 **User:** Yes, apply all six.
 
 **Claude:** C1, C2, D1, D2 in the Spec (timeout per request/page; CD-ROM/floppy/raw-mapped cases; `known_certs` next to the config in use; unwritable `known_certs` stops the connection). T1: `lost_connections` test. T2: TC-135 against vcsim with a distinctive password: not in any log line (TRACE), answer, error text or `known_certs`; checked to fail when the login logs the password. 176 tests pass (with vcsim). Plan 8.6 done.
+
+## 18. Release 1.3.0 prepared
+**Claude:** Version 1.3.0; `## 1.3.0 (2026-11-19)` in `Changes.md` (vSphere, config files between versions, `make`, downloads, known limitations: identity-federation accounts not supported, vSphere tried on Linux with the user's ESXi and restricted vCenter, Mac items as before), `## Unreleased` kept; README status; Plan 8.7. Release checks: `--version` 1.3.0, `release_notes.sh 1.3.0` prints only its section, 176 tests pass (with vcsim), clippy clean; phase 8 crosscheck 2026-11-19-03 applied. The tag is published by the pipeline after its file check.

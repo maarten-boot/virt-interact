@@ -5,10 +5,10 @@ A desktop GUI (Windows, Linux, macOS) that connects to remote hosts over SSH
 (libvirt/virsh first), and opens their VNC/SPICE consoles over the same SSH
 connection.
 
-Status: version 1.2.0 is released (GitHub releases page): the read-only
-inventory, VNC/SPICE consoles over SSH, right-click menus in the tree and
-SSH to a host in a terminal (see `Changes.md` for what it does and its
-known limitations). Next: VMware ESXi and vCenter (1.3).
+Status: version 1.3.0 is released (GitHub releases page): the read-only
+inventory of libvirt hosts and of VMware ESXi/vCenter, VNC/SPICE consoles
+over SSH, right-click menus in the tree and SSH to a host in a terminal
+(see `Changes.md` for what it does and its known limitations).
 See `architecture/Spec.md` and `architecture/Plan.md`.
 
 ## Install
@@ -128,7 +128,7 @@ argument. To check a viewer without the GUI:
 `cargo run -p vi-gui --example console-check -- --find` (or with
 `vnc HOST:PORT` to open a console of this machine through the tunnel).
 
-**VMware ESXi and vCenter** (1.3, in development): add a host with
+**VMware ESXi and vCenter** (since 1.3): add a host with
 `backend = "vsphere"` (or choose the backend in **Add host…**). The app
 reads the inventory through the vSphere API over HTTPS (port 443) with a
 user and password:

@@ -5250,7 +5250,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vi-backend"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "dirs",
  "futures-util",
@@ -5268,7 +5268,7 @@ dependencies = [
 
 [[package]]
 name = "vi-core"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "dirs",
  "serde",
@@ -5283,7 +5283,7 @@ dependencies = [
 
 [[package]]
 name = "vi-gui"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "dirs",
  "eframe",
@@ -5300,7 +5300,7 @@ dependencies = [
 
 [[package]]
 name = "vi-ssh"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "base64 0.22.1",
  "dirs",
@@ -5317,7 +5317,7 @@ dependencies = [
 
 [[package]]
 name = "vi-vsphere"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "bytes",
  "http-body-util",
