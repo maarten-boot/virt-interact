@@ -108,3 +108,8 @@ Done:
 **User:** The vCenter shows my VMs, status ok, no warnings.
 
 **Claude:** TC-136 pass (ESXi and restricted vCenter). Crosscheck 2026-11-19-03 of phase 8: C1 Spec says the refresh timeout covers the whole vSphere read, the code applies the command timeout per request; C2 Spec lists fewer CD-ROM/disk cases than the code shows; D1 `known_certs` location wording; D2 unwritable `known_certs` not specified; T1 no test for "expired session → log in again once"; T2 TC-135 (password never logged or saved) still without a test. Fixes proposed; waiting for the user's OK.
+
+## 17. Crosscheck fixes (phase 8)
+**User:** Yes, apply all six.
+
+**Claude:** C1, C2, D1, D2 in the Spec (timeout per request/page; CD-ROM/floppy/raw-mapped cases; `known_certs` next to the config in use; unwritable `known_certs` stops the connection). T1: `lost_connections` test. T2: TC-135 against vcsim with a distinctive password: not in any log line (TRACE), answer, error text or `known_certs`; checked to fail when the login logs the password. 176 tests pass (with vcsim). Plan 8.6 done.

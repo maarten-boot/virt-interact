@@ -671,7 +671,8 @@ impl Drop for ViewerGroup {
     }
 }
 
-/// SSH-level failures after which the connection is not reused.
+/// Failures after which the kept connection is not reused, so the next
+/// try connects (SSH) or logs in (vSphere) again once.
 fn connection_lost(e: &BackendError) -> bool {
     match e {
         BackendError::Ssh(_) => matches!(
@@ -1180,5 +1181,59 @@ mod tests {
         k.domain = "gone".into();
         w.open_console(host("gfx3"), SshSettings::default(), k, Ok(exe));
         assert!(!err(&rx).is_empty());
+    }
+
+    // Crosscheck 2026-11-19-03 T1: which errors count as a lost connection
+    // (then the worker connects or logs in again once, SPEC-022).
+    #[test]
+    fn lost_connections() {
+        use vi_vsphere::{CertInfo, VsphereError as V};
+        let t = || "vc:443".to_string();
+        let fault = |kind: &str| {
+            BackendError::Vsphere(V::Fault {
+                target: t(),
+                kind: kind.into(),
+                message: "m".into(),
+            })
+        };
+        // vSphere: expired session, connection gone.
+        assert!(connection_lost(&fault("NotAuthenticated")));
+        assert!(connection_lost(&BackendError::Vsphere(V::Connect {
+            target: t(),
+            reason: "reset".into()
+        })));
+        assert!(connection_lost(&BackendError::Vsphere(V::Http {
+            target: t(),
+            reason: "closed".into()
+        })));
+        // Not lost: a refused login, other faults, certificate problems,
+        // timeouts, unreadable answers.
+        for e in [
+            fault("InvalidLogin"),
+            fault("NoPermission"),
+            BackendError::Vsphere(V::LoginFailed {
+                target: t(),
+                user: "u".into(),
+            }),
+            BackendError::Vsphere(V::UnknownCertificate {
+                target: t(),
+                cert: Box::new(CertInfo::from_der(b"x")),
+            }),
+            BackendError::Vsphere(V::Timeout {
+                target: t(),
+                secs: 1,
+            }),
+            BackendError::Vsphere(V::Parse {
+                target: t(),
+                reason: "r".into(),
+            }),
+        ] {
+            assert!(!connection_lost(&e), "{e}");
+        }
+        // SSH: a protocol failure is lost; libvirt errors are not.
+        assert!(connection_lost(&BackendError::Ssh(
+            vi_ssh::SshError::Protocol("eof".into())
+        )));
+        assert!(!connection_lost(&BackendError::Config("x".into())));
     }
 }

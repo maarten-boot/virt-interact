@@ -28,6 +28,7 @@ roxmltree = "0.21"
 
 [dev-dependencies]
 tempfile.workspace = true
+tracing-subscriber = { workspace = true, features = ["fmt"] }
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
 rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
 

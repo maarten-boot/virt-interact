@@ -23,6 +23,11 @@ impl Drop for Sim {
 
 /// Start vcsim (`esx` = standalone ESXi) with user `reader`, password `pw`.
 pub fn start(esx: bool) -> Option<Sim> {
+    start_with(esx, "pw")
+}
+
+/// [`start`] with another password.
+pub fn start_with(esx: bool, password: &str) -> Option<Sim> {
     let bin = PathBuf::from(std::env::var_os("VI_VCSIM")?);
     let port = {
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -35,7 +40,7 @@ pub fn start(esx: bool) -> Option<Sim> {
         "-username",
         "reader",
         "-password",
-        "pw",
+        password,
     ]);
     if esx {
         cmd.arg("-esx");
@@ -245,4 +250,83 @@ async fn vcenter_mapping() {
             .cluster
             .is_none()
     }));
+}
+
+// TC-135: the password is in no log line (all levels), not in the
+// inventory answers (they become the cache and the raw view) and not in
+// known_certs; it is not in any error text either.
+#[test]
+fn password_never_logged_or_stored() {
+    const PW: &str = "Pw-7f3c9-NotInLogs";
+    let Some(sim) = start_with(true, PW) else {
+        return skip();
+    };
+    let d = tempfile::tempdir().unwrap();
+    let s = settings(d.path(), sim.port);
+    let buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+    let writer = {
+        let buf = buf.clone();
+        move || LogBuf(buf.clone())
+    };
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_writer(writer)
+        .with_ansi(false)
+        .finish();
+    let pages = tracing::subscriber::with_default(subscriber, || {
+        // One thread, so every task logs to this subscriber.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            // A wrong password first (its error text is checked too).
+            let p = prompter(&["Wrong-a1b2", PW]);
+            let session = VsphereSession::connect(&s, &p).await.unwrap();
+            let pages = session.inventory_pages().await.unwrap();
+            session.logout().await;
+            drop(session);
+            let failed = match VsphereSession::connect(
+                &s,
+                &prompter(&["Wrong-a1b2", "Wrong-a1b2", "Wrong-a1b2"]),
+            )
+            .await
+            {
+                Err(e) => e,
+                Ok(_) => panic!("wrong passwords accepted"),
+            };
+            assert!(!failed.to_string().contains("Wrong-a1b2"), "{failed}");
+            pages
+        })
+    });
+    let log = String::from_utf8(buf.lock().unwrap().clone()).unwrap();
+    assert!(log.contains("vSphere login"), "the capture works: {log}");
+    for secret in [PW, "Wrong-a1b2"] {
+        assert!(!log.contains(secret), "password in the log");
+        assert!(!pages.concat().contains(secret), "password in an answer");
+        let inv = vi_vsphere::inventory::parse(
+            &pages,
+            &vi_vsphere::About {
+                api_type: "HostAgent".into(),
+                version: String::new(),
+                full_name: String::new(),
+            },
+        )
+        .unwrap();
+        assert!(!format!("{inv:?}").contains(secret));
+        let certs = std::fs::read_to_string(s.tls.known.path()).unwrap();
+        assert!(!certs.contains(secret));
+    }
+}
+
+struct LogBuf(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for LogBuf {
+    fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(b);
+        Ok(b.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }

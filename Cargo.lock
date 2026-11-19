@@ -5333,6 +5333,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tracing",
+ "tracing-subscriber",
  "vi-core",
  "vi-ssh",
  "x509-cert",

@@ -255,13 +255,13 @@ Scope of an error:
   - Machine list (SPEC-009): name, UUID (`config.uuid`), state from `runtime.powerState` (poweredOn → running, poweredOff → shut off, suspended → "suspended"), template VMs marked as templates. "Persistent" and "Autostart" are libvirt concepts: shown as "n/a".
   - General: guest OS (`config.guestFullName`, `config.guestId`), firmware (`config.firmware`: BIOS or UEFI), hardware version, VMware Tools status, annotation as description. For a vCenter: the VM's datacenter, cluster and ESXi host (the tree stays flat: SPEC-015 unchanged).
   - CPU and memory: vCPUs, cores per socket, memory size.
-  - Disks: controller and unit, backing file (`[datastore] path.vmdk`), capacity, thin/thick; CD-ROM (ISO path or empty).
+  - Disks: controller and unit, backing file (`[datastore] path.vmdk`), capacity, thin/thick; a raw device mapping as a block device. CD-ROM and floppy: the image file (ISO), "host device", "client device" (the console user's drive), or empty.
   - Network adapters: type (vmxnet3, e1000e, …), MAC address, port group or distributed port group (by name), "(disconnected)" when not connected.
   - Other devices: one line per remaining device (controllers, video, USB, …).
   - Raw: the VM's properties as returned (XML), read-only, instead of the libvirt domain XML.
 - **Limited permissions.** Objects the user may not see are simply absent; a property the user may not read is shown as unknown. Neither is an error for the host (seen on a vCenter with a restricted view).
 - **Consoles:** not available for vSphere VMs ("not available for vSphere": ESXi 7.0 removed the built-in VNC server, and the VMware console protocol is not supported).
-- Large inventories are read in pages (`ContinueRetrievePropertiesEx`); the refresh timeout (SPEC-012) applies to the whole read.
+- Large inventories are read in pages of up to 500 objects (`ContinueRetrievePropertiesEx`). The command timeout (`[ssh] command_timeout_secs`, SPEC-012) applies to each request, i.e. each page, like it applies to each virsh command; a limit on the whole read would cut off large vCenters. The connect timeout applies to the TCP connect and the TLS handshake.
 
 ### SPEC-022: vSphere login with user and password (v1.3)
 - The password is asked when the host is first read in an app session (the same dialog style as an SSH key passphrase), used once for `Login`, then wiped: the app's copies (the typed text, the request body) are zeroed; copies inside the HTTP/TLS libraries' own buffers are outside its control. It is never written to the config, the cache, or logs.
@@ -271,7 +271,7 @@ Scope of an error:
 
 ### SPEC-023: vSphere server certificate trust (v1.3)
 - HTTPS uses rustls (ring crypto provider, as for SSH: no C toolchain). Certificates trusted by the system are accepted, with the host name checked.
-- A certificate the system does not trust (the self-signed default of ESXi and vCenter) is shown with its subject, validity and SHA-256 fingerprint; the user accepts or rejects, as for an unknown SSH host key (SPEC-008). An accepted fingerprint is stored per `host:port` in `known_certs` in the app's config directory (mode 0600 on Unix) and trusted from then on.
+- A certificate the system does not trust (the self-signed default of ESXi and vCenter) is shown with its subject, validity and SHA-256 fingerprint; the user accepts or rejects, as for an unknown SSH host key (SPEC-008). An accepted fingerprint is stored per `host:port` in `known_certs` next to the config file in use (also with `--config`; mode 0600 on Unix) and trusted from then on. If `known_certs` cannot be written, the connection stops with an error naming the file: unlike an SSH host key (SPEC-008), a certificate is never trusted for one connection without a pin.
 - A stored fingerprint that no longer matches is refused with a prominent warning and no override in the GUI (the user removes the entry from `known_certs` after checking). TLS 1.2 is the minimum.
 
 ## 10. Tree menus (v1.2)
