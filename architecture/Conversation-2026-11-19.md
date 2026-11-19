@@ -125,3 +125,8 @@ Done:
 **User:** Pushed.
 
 **Claude:** CI run 44620164933 (`6fb2c74`): all 5 jobs green (176 tests; Windows 164; vcsim job 53, TC-135 included). TC-010 updated.
+
+## 20. v1.1.0 release title
+**User:** Fix the v1.1.0 release title.
+
+**Claude:** Not possible with this token (HTTP 403 on editing a release). **User:** Fixed it. Checked: the title is "virt-interact v1.1.0", 6 files, v1.3.0 still latest.
