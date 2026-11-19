@@ -99,3 +99,8 @@ Done:
 **User:** Do both for 1.3.
 
 **Claude:** No toml_edit needed (the app already rewrites the whole file on save): `Config` keeps unknown top-level entries in a `#[serde(flatten)]` table (one warning each; written back unchanged); the known sections and host entries stay strict (typos are errors with their line); `[console]`/`[terminal]` are skipped when they hold no setting. New TC-028b (also checks that a default file has only the five 1.0 sections). Spec SPEC-004, Changes.
+
+## 16. TC-136: vCenter login
+**User:** vCenter login works.
+
+**Claude:** TC-136: vCenter login pass (the API login takes the same user and password as the SSO web page). Still to confirm for the restricted view: the VMs the user may see are listed and the host shows no error.
