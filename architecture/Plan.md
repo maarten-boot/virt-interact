@@ -106,7 +106,7 @@ about.toml       accepted third-party licences (cargo-about; about.hbs is the no
 ### Phase 7: v1.2 tree menus and SSH in a terminal (SPEC-024, 025, SPEC-002 release)
 Decided 2026-11-19: menus on VMs (consoles, close, copy name/UUID) and hosts (refresh, edit, remove, start SSH, copy ssh command); terminal detected automatically and configurable in the config file and in Settings; the release pipeline publishes by itself after checking the files; vSphere moves to 1.3.
 - [x] 7.1 Right-click menus on VMs and hosts (SPEC-024): menu items as data (`vm_menu_items`, `host_menu_items`), drawn with egui context menus; tests TC-140, TC-141; checked under Xvfb (2026-11-19).
-- [x] 7.2 SSH command and terminal launch per platform (`vi-gui::terminal`); `[terminal] command`; Settings field with the terminal in use; tests TC-142, TC-143; under Xvfb a configured stand-in terminal got `-e ssh -l ops -- <host>` (2026-11-19). Open: TC-144 (real terminals).
+- [x] 7.2 SSH command and terminal launch per platform (`vi-gui::terminal`); `[terminal] command`; Settings field with the terminal in use; tests TC-142, TC-143; under Xvfb a configured stand-in terminal got `-e ssh -l ops -- <host>` (2026-11-19). TC-144: Linux pass (2026-11-19); Windows open.
 - [x] 7.3 Release pipeline: `scripts/publish_release.sh` checks the six files and checksums, then publishes as latest; tried against v1.0.0 and v1.1.0 (publish step stubbed) and with a missing file (refused) (2026-11-19). Open: TC-123 on the next tag.
 - [ ] 7.4 Crosscheck; release 1.2.0.
 

@@ -36,3 +36,7 @@ Done:
 **User:** Pushed.
 
 **Claude:** CI run 44522791048 (`006c2d8`): all 4 jobs green; 152 tests on Linux, macOS and MSRV, 140 on Windows. TC-010 updated. Its archives are for TC-144 (Start SSH with real terminals).
+
+**User:** Start SSH works on Linux.
+
+**Claude:** TC-144: Linux pass; Windows open (macOS: no Mac).
