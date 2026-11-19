@@ -127,6 +127,14 @@ pub fn opt_text<T: std::fmt::Display>(v: &Option<T>) -> String {
         .map_or_else(|| "unknown".into(), |v| v.to_string())
 }
 
+/// A vSphere template (SPEC-021).
+pub fn is_template(d: &Domain) -> bool {
+    d.details
+        .as_ref()
+        .and_then(|x| x.general.vsphere.as_ref())
+        .is_some_and(|v| v.template)
+}
+
 pub fn yes_no(v: Option<bool>) -> &'static str {
     match v {
         Some(true) => "yes",

@@ -122,6 +122,30 @@ argument. To check a viewer without the GUI:
 `cargo run -p vi-gui --example console-check -- --find` (or with
 `vnc HOST:PORT` to open a console of this machine through the tunnel).
 
+**VMware ESXi and vCenter** (1.3, in development): add a host with
+`backend = "vsphere"` (or choose the backend in **Add host…**). The app
+reads the inventory through the vSphere API over HTTPS (port 443) with a
+user and password:
+
+```toml
+[[hosts]]
+name = "esx1"
+host = "esx1.example.lan"
+backend = "vsphere"
+user = "reader@vsphere.local"
+```
+
+- Read-only: the app can only log in, read properties and log out. A user
+  with the vSphere **Read-only** role is enough (and recommended); VMs the
+  user may not see are simply not listed.
+- The password is asked when the host is first read and is never stored;
+  the session is kept while the app runs.
+- A self-signed certificate (the ESXi/vCenter default) is shown with its
+  SHA-256 fingerprint; when you accept it, it is kept in `known_certs` next
+  to the config file, and a changed certificate is refused from then on.
+- Each VM shows its datacenter, cluster, ESXi host, hardware version and
+  VMware Tools status. Consoles are not available for vSphere VMs.
+
 **Right-click menus** (since 1.2): right-click a VM in the tree
 for **Open console** (one per VNC/SPICE display), **Close console**,
 **Copy name** and **Copy UUID**; right-click a host for **Refresh**,

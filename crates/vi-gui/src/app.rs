@@ -407,6 +407,12 @@ impl App {
         self.all_hosts().find(|h| h.name == name)
     }
 
+    /// Is `host` a vSphere host (SPEC-021)?
+    pub fn is_vsphere(&self, host: &str) -> bool {
+        self.host_config(host)
+            .is_some_and(|h| h.backend == Backend::Vsphere)
+    }
+
     // ---- actions -------------------------------------------------------
 
     /// Start a refresh of one host (SPEC-012).
@@ -458,6 +464,10 @@ impl App {
     pub fn vm_menu_items(&self, host: &str, d: &Domain) -> Vec<Vec<MenuItem>> {
         let mut consoles = Vec::new();
         match &d.details {
+            _ if self.is_vsphere(host) => consoles.push(MenuItem::new(
+                "Open console",
+                Err("not available for vSphere".into()),
+            )),
             None => consoles.push(MenuItem::new(
                 "Open console",
                 Err("refresh the host first to read the VM's details".into()),
@@ -1221,6 +1231,12 @@ impl App {
                                     }
                                 });
                                 ui.label(RichText::new(badge).color(self.state_color(col)));
+                                if view::is_template(d) {
+                                    ui.label(
+                                        RichText::new("(template)")
+                                            .color(theme::c(self.palette.weak_text)),
+                                    );
+                                }
                                 if d.error.is_some() {
                                     ui.label(
                                         RichText::new("(error)")
@@ -1311,7 +1327,18 @@ impl App {
                     );
                     row(ui, "Status", self.status_text(&entry.status));
                     if let Some(s) = &entry.shown {
-                        inventory_rows(ui, s);
+                        inventory_rows(ui, s, false);
+                    }
+                    return;
+                }
+                if cfg.backend == Backend::Vsphere {
+                    row(ui, "Backend", backend_label(cfg.backend));
+                    row(ui, "Host", cfg.host.clone());
+                    row(ui, "Port", cfg.port_or_default().to_string());
+                    row(ui, "User", cfg.user.clone().unwrap_or_else(|| none.into()));
+                    row(ui, "Status", self.status_text(&entry.status));
+                    if let Some(s) = &entry.shown {
+                        inventory_rows(ui, s, true);
                     }
                     return;
                 }
@@ -1337,7 +1364,7 @@ impl App {
                 );
                 row(ui, "Status", self.status_text(&entry.status));
                 if let Some(s) = &entry.shown {
-                    inventory_rows(ui, s);
+                    inventory_rows(ui, s, false);
                 }
             });
         if let HostStatus::Error(e) = &entry.status {
@@ -1367,9 +1394,14 @@ impl App {
             return;
         };
         let (badge, col) = view::state_badge(&d.state);
+        let vsphere = self.is_vsphere(host);
+        let template = view::is_template(&d);
         ui.horizontal(|ui| {
             ui.heading(&d.name);
             ui.label(RichText::new(badge).color(self.state_color(col)).strong());
+            if template {
+                ui.label(RichText::new("(template)").color(theme::c(self.palette.weak_text)));
+            }
             if cached {
                 ui.label(RichText::new("(cached)").color(theme::c(self.palette.weak_text)));
             }
@@ -1387,9 +1419,16 @@ impl App {
                     "UUID",
                     d.uuid.clone().unwrap_or_else(|| "unknown".into()),
                 );
-                row(ui, "ID", view::opt_text(&d.id));
-                row(ui, "Persistent", view::yes_no(d.persistent));
-                row(ui, "Autostart", view::yes_no(d.autostart));
+                if vsphere {
+                    // libvirt concepts (SPEC-021).
+                    row(ui, "ID", "n/a");
+                    row(ui, "Persistent", "n/a");
+                    row(ui, "Autostart", "n/a");
+                } else {
+                    row(ui, "ID", view::opt_text(&d.id));
+                    row(ui, "Persistent", view::yes_no(d.persistent));
+                    row(ui, "Autostart", view::yes_no(d.autostart));
+                }
             });
         let Some(x) = &d.details else { return };
         match self.components(ui, x, host, &d) {
@@ -1455,6 +1494,34 @@ impl App {
                     .num_columns(2)
                     .striped(true)
                     .show(ui, |ui| {
+                        if let Some(v) = &g.vsphere {
+                            // SPEC-021: where it runs and VMware details.
+                            row(
+                                ui,
+                                "Guest OS",
+                                v.guest_full_name
+                                    .clone()
+                                    .or_else(|| g.guest_os_id.clone())
+                                    .unwrap_or_else(|| "unknown".into()),
+                            );
+                            row(ui, "Firmware", g.firmware.label().to_string());
+                            row(ui, "Datacenter", view::opt_text(&v.datacenter));
+                            row(
+                                ui,
+                                "Cluster",
+                                v.cluster.clone().unwrap_or_else(|| "none".into()),
+                            );
+                            row(ui, "ESXi host", view::opt_text(&v.esxi_host));
+                            row(ui, "Hardware version", view::opt_text(&v.hardware_version));
+                            row(ui, "VMware Tools", view::opt_text(&v.tools));
+                            if v.template {
+                                row(ui, "Template", "yes");
+                            }
+                            if let Some(t) = &g.description {
+                                row(ui, "Notes", t.clone());
+                            }
+                            return;
+                        }
                         row(
                             ui,
                             "Guest OS",
@@ -1481,6 +1548,24 @@ impl App {
                     .striped(true)
                     .show(ui, |ui| {
                         let c = &x.cpu;
+                        if g.vsphere.is_some() {
+                            // vSphere (SPEC-021): no CPU mode, dies,
+                            // threads, ballooned "current" or hugepages.
+                            row(ui, "vCPUs", view::opt_text(&c.current));
+                            if let Some(t) = &c.topology {
+                                row(
+                                    ui,
+                                    "Topology",
+                                    format!(
+                                        "{} sockets × {} cores per socket",
+                                        view::opt_text(&t.sockets),
+                                        view::opt_text(&t.cores)
+                                    ),
+                                );
+                            }
+                            row(ui, "Memory", view::kib_text(x.memory.max_kib));
+                            return;
+                        }
                         row(
                             ui,
                             "vCPUs",
@@ -1569,6 +1654,16 @@ impl App {
         egui::CollapsingHeader::new(format!("Graphics ({})", x.graphics.len()))
             .default_open(true)
             .show(ui, |ui| {
+                if g.vsphere.is_some() {
+                    ui.label(
+                        RichText::new(
+                            "Consoles are not available for vSphere VMs (ESXi 7.0 and later \
+                             have no VNC server; use the vSphere Client or VMware Remote Console).",
+                        )
+                        .color(theme::c(self.palette.weak_text)),
+                    );
+                    return;
+                }
                 egui::Grid::new("gfx")
                     .num_columns(5)
                     .striped(true)
@@ -1623,19 +1718,23 @@ impl App {
                         }
                     });
             });
-        egui::CollapsingHeader::new("Raw XML")
-            .default_open(false)
-            .show(ui, |ui| {
-                if ui.button("Copy to clipboard").clicked() {
-                    ui.ctx().copy_text(x.xml.clone());
-                }
-                let mut text = x.xml.as_str();
-                ui.add(
-                    egui::TextEdit::multiline(&mut text)
-                        .code_editor()
-                        .desired_width(f32::INFINITY),
-                );
-            });
+        egui::CollapsingHeader::new(if g.vsphere.is_some() {
+            "Raw properties (XML)"
+        } else {
+            "Raw XML"
+        })
+        .default_open(false)
+        .show(ui, |ui| {
+            if ui.button("Copy to clipboard").clicked() {
+                ui.ctx().copy_text(x.xml.clone());
+            }
+            let mut text = x.xml.as_str();
+            ui.add(
+                egui::TextEdit::multiline(&mut text)
+                    .code_editor()
+                    .desired_width(f32::INFINITY),
+            );
+        });
         action
     }
 
@@ -1990,8 +2089,8 @@ impl App {
                         ui.add(egui::Label::new(RichText::new(&c.fingerprint).monospace()).wrap());
                         ui.label(
                             RichText::new(
-                                "Compare the fingerprint with the server (ESXi: Host Client → \
-                                 Manage → Security → Certificates) before accepting.",
+                                "Compare the fingerprint with the server (ESXi Host Client: \
+                                 Manage, Security, Certificates) before accepting.",
                             )
                             .color(weak),
                         );
@@ -2087,11 +2186,11 @@ pub fn button_color(p: &Palette, enabled: bool) -> Color32 {
 }
 
 /// Grid rows about a host's inventory: versions, VM count, live/cached.
-fn inventory_rows(ui: &mut egui::Ui, s: &Shown) {
+fn inventory_rows(ui: &mut egui::Ui, s: &Shown, vsphere: bool) {
     let inv = &s.inventory;
     row(
         ui,
-        "libvirt",
+        if vsphere { "Server" } else { "libvirt" },
         inv.library.clone().unwrap_or_else(|| "unknown".into()),
     );
     row(

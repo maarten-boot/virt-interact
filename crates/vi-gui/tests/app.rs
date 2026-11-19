@@ -831,3 +831,60 @@ fn vsphere_host_form() {
     app.host_form = Some(HostForm::edit(&esx));
     frame(&mut app, &ctx);
 }
+
+// TC-137: a vSphere host in the GUI (SPEC-021): host and VM pages draw with
+// the vSphere rows; libvirt-only fields say n/a; no console, with the
+// reason in the menu; templates are marked.
+#[test]
+fn vsphere_host_in_the_gui() {
+    use vi_gui::app::TreeAction;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "[[hosts]]\nname = \"vc\"\nhost = \"vc.example.lan\"\nbackend = \"vsphere\"\nuser = \"reader\"\n",
+    )
+    .unwrap();
+    let (store, _, err) = ConfigStore::open(path);
+    assert!(err.is_none());
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/vsphere");
+    let page = std::fs::read_to_string(root.join("vcenter-inventory.xml")).unwrap();
+    let about = vi_vsphere::About {
+        api_type: "VirtualCenter".into(),
+        version: "8.0".into(),
+        full_name: "vCenter simulator".into(),
+    };
+    let mut inv = vi_vsphere::inventory::parse(&[page], &about).unwrap();
+    // Make one a template.
+    inv.domains[1]
+        .details
+        .as_mut()
+        .unwrap()
+        .general
+        .vsphere
+        .as_mut()
+        .unwrap()
+        .template = true;
+    let cache = Cache::new(dir.path().join("cache"));
+    cache
+        .save(&CachedInventory::new("vc", 1_700_000_000, inv.clone()))
+        .unwrap();
+    let mut app = App::new(store, vec![], Some(cache));
+    assert!(app.is_vsphere("vc"));
+    let ctx = egui::Context::default();
+    app.apply_theme(&ctx);
+    app.selection = Selection::Host("vc".into());
+    frame(&mut app, &ctx);
+    for d in &inv.domains {
+        app.selection = Selection::Domain("vc".into(), d.name.clone());
+        frame(&mut app, &ctx);
+        let g = app.vm_menu_items("vc", d);
+        assert_eq!(g[0][0].label, "Open console");
+        assert_eq!(g[0][0].action, Err("not available for vSphere".into()));
+        assert!(matches!(g[1][0].action, Ok(TreeAction::CopyText(_))));
+    }
+    assert!(vi_gui::view::is_template(&inv.domains[1]));
+    assert!(!vi_gui::view::is_template(&inv.domains[0]));
+    // No SSH items for the vSphere host.
+    assert_eq!(app.host_menu_items("vc").len(), 1);
+}

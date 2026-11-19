@@ -5,9 +5,14 @@ Changes between releases. Newest on top.
 ## Unreleased
 
 **VMware vSphere (in progress, for 1.3)**
-- Hosts can be set to `backend = "vsphere"` (in the config or with the
-  backend choice in the host editor), with `host`, `port` (default 443)
-  and `user`. Reading them is not finished yet.
+- ESXi hosts and vCenter servers: `backend = "vsphere"` (in the config or
+  with the backend choice in the host editor), with `host`, `port`
+  (default 443) and `user`. The inventory is read through the read-only
+  vSphere API; the password is asked once per session and never stored.
+- Self-signed certificates are shown with their fingerprint and pinned in
+  `known_certs` when accepted; a changed certificate is refused.
+- VM pages show datacenter, cluster, ESXi host, hardware version and VMware
+  Tools; templates are marked. No consoles for vSphere VMs.
 - The default `libvirt_uri` is no longer written to the config file.
 
 ## 1.2.0 (2026-11-19)
