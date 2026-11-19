@@ -2,7 +2,7 @@
 
 Status: draft v1, 2026-11-13.
 
-Items are numbered `SPEC-nnn` so that Plan.md and TestCases.md can refer to them. Each item is tagged with the release it belongs to: **v1** (read-only inventory), **v1.1** (remote viewing), **v1.2** (VMware vSphere, planned), or **later**.
+Items are numbered `SPEC-nnn` so that Plan.md and TestCases.md can refer to them. Each item is tagged with the release it belongs to: **v1** (read-only inventory), **v1.1** (remote viewing), **v1.2** (tree menus, SSH in a terminal), **v1.3** (VMware vSphere, planned), or **later**.
 
 ## 1. Purpose
 virt-interact is a desktop GUI application that connects to remote hosts over SSH with key-based authentication. It builds a read-only inventory of the virtual machines defined on each host: every machine, running or stopped, and the components of each one. A later release adds remote viewing (VNC/SPICE) of running machines, tunnelled through the same SSH connection.
@@ -30,6 +30,7 @@ virt-interact is a desktop GUI application that connects to remote hosts over SS
   - Windows: `virt-interact-<ver>-windows-x86_64.zip`; the release binary is a GUI program (no console window);
   - macOS: `virt-interact-<ver>-macos-universal.zip` with `virt-interact.app` (arm64 + x86_64, macOS 12+), ad-hoc signed but not notarized: the first start needs "Open Anyway" in System Settings → Privacy & Security.
   - Installers (MSI, AppImage/deb) and notarization are later work.
+- **Release (v1.2):** pushing tag `v<version>` (equal to the Cargo version) tests and packages every platform, creates the release as a draft with the `Changes.md` section as text and title `virt-interact v<version>`, uploads the three archives and their `.sha256` files, then checks that exactly these six files are attached and that each downloaded archive matches its checksum. Only then is the release published and marked latest. If a check fails, the job fails and the release stays a draft.
 - **Licence:** virt-interact is MIT licensed. Every archive holds `LICENSE` and `THIRD_PARTY_LICENSES.html` with the licence texts of all bundled crates (all platforms). Only licences listed in `about.toml` are accepted; packaging fails on any other, so a new licence is reviewed before it is shipped. For a crate under "A OR B" the first accepted licence applies; no GPL-only code is included.
 - **Icon:** the app has its own icon, the project logo (a blue "V" on a green rounded square; master `packaging/icon/logo.png`): the window icon (all platforms), embedded in the Windows `.exe`, in the macOS app bundle, and with a `.desktop` file in the Linux archive (the window's app id is `virt-interact`).
 
@@ -64,12 +65,12 @@ Each host has these fields:
 | `port` | no | from ssh config, else 22 | SSH port, 1–65535 |
 | `user` | no | from ssh config, else the local user name | Remote user |
 | `identity_file` | no | from ssh config / agent / default keys | Private key path. A leading `~` is expanded to the local home directory (`~user` is not). |
-| `backend` | no | `"libvirt"` | Virtualisation backend (SPEC-017): `"libvirt"`, or `"vsphere"` (v1.2, SPEC-021) |
+| `backend` | no | `"libvirt"` | Virtualisation backend (SPEC-017): `"libvirt"`, or `"vsphere"` (v1.3, SPEC-021) |
 | `libvirt_uri` | no | `"qemu:///system"` | URI passed to `virsh -c` |
 | `virsh_prefix` | no | none | Command prefix, e.g. `"sudo -n"`; plain characters only (SPEC-011) |
 
 - Hosts can be added, edited and removed in the GUI. Changes are saved to the config file.
-- v1.2: a `vsphere` host uses `host`, `port` (default 443) and `user` (required); `identity_file`, `libvirt_uri` and `virsh_prefix` are refused for it, and SSH config (SPEC-007) does not apply. Its password is never in the file (SPEC-022).
+- v1.3: a `vsphere` host uses `host`, `port` (default 443) and `user` (required); `identity_file`, `libvirt_uri` and `virsh_prefix` are refused for it, and SSH config (SPEC-007) does not apply. Its password is never in the file (SPEC-022).
 - Host names must be unique and not empty; `host` must not be empty. Names starting with `@` are reserved for the local entries (SPEC-020).
 - The GUI and the file stay consistent: a host added in the file appears after a reload.
 
@@ -95,7 +96,7 @@ Each host has these fields:
   3. Only if no key file is configured (app or ssh config): the default keys `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa` (those that exist).
 - Agent keys that match a configured key file (recognised by its `.pub`) are offered first, so an agent with many keys does not use up the server's `MaxAuthTries` before the right key.
 - If the server closes the connection during authentication (e.g. too many attempts), the error still lists the keys tried, with a note that the server hung up.
-- Password authentication and keyboard-interactive authentication are never used for SSH. (The vSphere backend, v1.2, logs in to the vSphere API with a password: SPEC-022.)
+- Password authentication and keyboard-interactive authentication are never used for SSH. (The vSphere backend, v1.3, logs in to the vSphere API with a password: SPEC-022.)
 - If a key file is encrypted, the GUI asks for its passphrase. The SSH layer uses it for one connection attempt and then wipes it; the GUI does not keep it. Instead the SSH connection of each host stays open while the app runs, so a later refresh does not ask again; the connection is dropped when the host is edited or removed, when the config is reloaded, or when it breaks (the app then reconnects once). It is never written to disk or to logs.
 - SSH is implemented with `russh` (crypto backend `ring`, so no C toolchain/cmake is needed on Windows). There is no dependency on an external `ssh` binary.
 - A key that the agent already offered is not tried again from its file, so its passphrase is not asked for needlessly (the `.pub` next to the key file is used to recognise it).
@@ -210,7 +211,7 @@ Scope of an error:
 ## 7. Architecture
 
 ### SPEC-017: Backend abstraction (v1 design, later implementations)
-- Inventory access goes through a backend trait (for example, `HypervisorBackend`). v1 has one implementation: `libvirt` (virsh over SSH, or locally for SPEC-020). v1.2 adds `vsphere` (SPEC-021), which talks HTTPS instead of running commands.
+- Inventory access goes through a backend trait (for example, `HypervisorBackend`). v1 has one implementation: `libvirt` (virsh over SSH, or locally for SPEC-020). v1.3 adds `vsphere` (SPEC-021), which talks HTTPS instead of running commands.
 - Command execution goes through a trait (`CommandRunner`): an SSH session, a local shell runner (SPEC-020), or a mock for tests.
 - Other backends (for example Proxmox or Hyper-V) can be added later without changing the GUI.
 
@@ -244,9 +245,9 @@ Scope of an error:
 ### SPEC-019: Embedded VNC viewer (later)
 - A VNC viewer built into the app, as an alternative to the external viewer.
 
-## 9. VMware vSphere (v1.2, planned)
+## 9. VMware vSphere (v1.3, planned)
 
-### SPEC-021: vSphere backend for ESXi and vCenter (v1.2)
+### SPEC-021: vSphere backend for ESXi and vCenter (v1.3)
 - A host with `backend = "vsphere"` is a standalone ESXi host or a vCenter Server. The app reads it through the vSphere Web Services API (SOAP, `https://<host>:<port>/sdk`), which both offer. The REST "Automation" API (`/api`) is not used: it exists only on vCenter.
 - **Read-only, enforced in one place (like SPEC-011).** Only these API methods can be sent: `RetrieveServiceContent`, `SessionManager.Login`, `SessionManager.Logout`, `PropertyCollector.RetrievePropertiesEx`, `PropertyCollector.ContinueRetrievePropertiesEx`. The inventory is walked with traversal specs from the root folder, so no server-side view objects are created. Covered by tests. A user with the vSphere "Read-only" role is enough and is recommended (README). The free ESXi edition, whose API is read-only, works.
 - **What is shown** (mapped onto the existing model, so the GUI needs no backend-specific screens):
@@ -261,13 +262,37 @@ Scope of an error:
 - **Consoles:** not available for vSphere VMs ("not available for vSphere": ESXi 7.0 removed the built-in VNC server, and the VMware console protocol is not supported).
 - Large inventories are read in pages (`ContinueRetrievePropertiesEx`); the refresh timeout (SPEC-012) applies to the whole read.
 
-### SPEC-022: vSphere login with user and password (v1.2)
+### SPEC-022: vSphere login with user and password (v1.3)
 - The password is asked when the host is first read in an app session (the same dialog style as an SSH key passphrase), used once for `Login`, then wiped (zeroized). It is never written to the config, the cache, or logs.
 - The session (its cookie) is kept in memory while the app runs, like a kept SSH connection (SPEC-006): a later refresh does not ask again. It is ended with `Logout` when the host is edited or removed, when the config is reloaded, and when the app quits. An expired session is replaced by asking for the password again.
 - A wrong user or password gives "login failed" without saying which was wrong; the app does not retry on its own (no account lockout from retries).
-- Remembering the password in the OS keychain is not in v1.2 (later, optional).
+- Remembering the password in the OS keychain is not in v1.3 (later, optional).
 
-### SPEC-023: vSphere server certificate trust (v1.2)
+### SPEC-023: vSphere server certificate trust (v1.3)
 - HTTPS uses rustls (ring crypto provider, as for SSH: no C toolchain). Certificates trusted by the system are accepted, with the host name checked.
 - A certificate the system does not trust (the self-signed default of ESXi and vCenter) is shown with its subject, validity and SHA-256 fingerprint; the user accepts or rejects, as for an unknown SSH host key (SPEC-008). An accepted fingerprint is stored per `host:port` in `known_certs` in the app's config directory (mode 0600 on Unix) and trusted from then on.
 - A stored fingerprint that no longer matches is refused with a prominent warning and no override in the GUI (the user removes the entry from `known_certs` after checking). TLS 1.2 is the minimum.
+
+## 10. Tree menus (v1.2)
+
+### SPEC-024: Right-click menus in the host tree (v1.2)
+- Right-clicking a name in the tree opens a menu next to the pointer; it does not change the selection, and nothing in the tree moves (SPEC-015 feedback rule). Items that cannot be used are disabled with the reason as hover text.
+- **VM menu:**
+  - "Open console" for each VNC/SPICE graphics device ("Open console (VNC)", "Open console (SPICE)"; numbered when a VM has several of one kind), with the same rules as the Graphics table (SPEC-018); while a console is open: "Close console". Without loaded details: disabled, "refresh the host first".
+  - "Copy name", "Copy UUID" (disabled when the UUID is unknown).
+- **Host menu:**
+  - "Refresh" (disabled while the host is being read), "Edit…", "Remove…" (as the existing buttons; disabled for the local entries, SPEC-020).
+  - "Start SSH" and "Copy ssh command" (SPEC-025); not shown for the local entries.
+
+### SPEC-025: SSH to a host in a terminal (v1.2)
+- "Start SSH" opens a terminal window running the system OpenSSH client: `ssh [-p <port>] [-l <user>] [-i <identity_file>] -- <host>`, with only the values set in the app's host entry; everything else (aliases, `ProxyJump`, known hosts, agent) comes from the user's own `~/.ssh/config`. This is the user's own interactive session: the app does not see it, and the key-only rule (SPEC-006) does not apply to it (ssh may ask for a password).
+- "Copy ssh command" copies the same command line, POSIX-quoted, to the clipboard.
+- The terminal:
+  - Configured: `[terminal] command`, a list such as `["kitty", "-e"]`; the ssh command is appended as separate arguments (no shell). It can also be set in Settings (text with shell-style quoting; empty means automatic). A changed setting is used at the next "Start SSH".
+  - Automatic (default):
+    - Linux: the first found on the search path of `x-terminal-emulator -e`, `gnome-terminal --`, `konsole -e`, `xfce4-terminal -x`, `kitty`, `alacritty -e`, `xterm -e`.
+    - macOS: Terminal.app (through `osascript`), with the command quoted for the shell and for AppleScript.
+    - Windows: Windows Terminal (`wt.exe`) when installed, else `ssh.exe` in a new console window.
+  - Settings shows which terminal is used. When none is found, an error says so and names `[terminal] command`. A terminal that cannot be started gives an error message naming the host.
+- The terminal runs on its own; closing the app does not close it.
+

@@ -44,6 +44,8 @@ pub struct Config {
     pub local: LocalConfig,
     /// Remote consoles (SPEC-018).
     pub console: ConsoleConfig,
+    /// The terminal for "Start SSH" (SPEC-025).
+    pub terminal: TerminalConfig,
     pub hosts: Vec<HostConfig>,
 }
 
@@ -55,6 +57,16 @@ pub struct ConsoleConfig {
     /// (the default when unset).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub viewer: Option<String>,
+}
+
+/// `[terminal]`: the terminal for "Start SSH" (SPEC-025).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct TerminalConfig {
+    /// Program and its arguments; the ssh command is appended as separate
+    /// arguments (no shell). Unset or empty: detected per platform.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<Vec<String>>,
 }
 
 /// When the local libvirt is shown (SPEC-020).
@@ -798,6 +810,19 @@ virsh_prefix = "sudo -n"
         )
         .unwrap();
         assert_eq!(cfg.console.viewer.as_deref(), Some("/opt/v/remote-viewer"));
+        // [terminal] (SPEC-025, TC-143): unset by default; a list is kept;
+        // a plain string is refused (it would need a shell to split).
+        assert_eq!(cfg.terminal.command, None);
+        let (cfg, _) = Config::parse(
+            "[terminal]\ncommand = [\"kitty\", \"-e\"]\n",
+            Path::new("c"),
+        )
+        .unwrap();
+        assert_eq!(
+            cfg.terminal.command,
+            Some(vec!["kitty".to_string(), "-e".to_string()])
+        );
+        assert!(Config::parse("[terminal]\ncommand = \"kitty -e\"\n", Path::new("c")).is_err());
     }
 
     // TC-028: every ```toml block in the README must parse.

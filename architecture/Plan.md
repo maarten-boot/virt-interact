@@ -103,14 +103,21 @@ about.toml       accepted third-party licences (cargo-about; about.hbs is the no
   - [x] release crosscheck (2026-11-19-01);
   - [x] the user pushed tag `v1.1.0` and published the release; the six files were attached by hand (the published release first had none), all checksums verified (2026-11-19). TC-121 for 1.1.0 open.
 
-### Phase 7: v1.2 VMware vSphere (SPEC-021, 022, 023)
-Decided 2026-11-18: password asked per app session and kept only in memory; flat tree with datacenter/cluster/ESXi host as VM fields; after release 1.1. Tests: vcsim (govmomi's vSphere simulator, ESXi and vCenter mode) in CI, recorded SOAP responses as fixtures; manual check on the user's ESXi host and a vCenter with a restricted view.
-- [ ] 7.1 Config: `backend = "vsphere"`, field rules (SPEC-005); host editor shows only the fields of the chosen backend.
-- [ ] 7.2 HTTPS client: rustls (ring) on tokio; certificate check and `known_certs` with the accept dialog (SPEC-023).
-- [ ] 7.3 SOAP layer with the method allowlist; Login/Logout, session kept per host and ended on forget/reload/quit; password dialog (SPEC-022).
-- [ ] 7.4 Inventory: PropertyCollector traversal (paged), mapping to the model, permission gaps tolerated (SPEC-021); fixtures from vcsim and from real ESXi/vCenter responses (anonymised).
-- [ ] 7.5 GUI: vSphere fields (datacenter, cluster, ESXi host, Tools, hardware version), "n/a" for libvirt-only fields, console "not available for vSphere"; README (Read-only role, certificates).
-- [ ] 7.6 CI job with vcsim (ESXi and vCenter mode); manual tests on real systems; crosscheck.
+### Phase 7: v1.2 tree menus and SSH in a terminal (SPEC-024, 025, SPEC-002 release)
+Decided 2026-11-19: menus on VMs (consoles, close, copy name/UUID) and hosts (refresh, edit, remove, start SSH, copy ssh command); terminal detected automatically and configurable in the config file and in Settings; the release pipeline publishes by itself after checking the files; vSphere moves to 1.3.
+- [x] 7.1 Right-click menus on VMs and hosts (SPEC-024): menu items as data (`vm_menu_items`, `host_menu_items`), drawn with egui context menus; tests TC-140, TC-141; checked under Xvfb (2026-11-19).
+- [x] 7.2 SSH command and terminal launch per platform (`vi-gui::terminal`); `[terminal] command`; Settings field with the terminal in use; tests TC-142, TC-143; under Xvfb a configured stand-in terminal got `-e ssh -l ops -- <host>` (2026-11-19). Open: TC-144 (real terminals).
+- [x] 7.3 Release pipeline: `scripts/publish_release.sh` checks the six files and checksums, then publishes as latest; tried against v1.0.0 and v1.1.0 (publish step stubbed) and with a missing file (refused) (2026-11-19). Open: TC-123 on the next tag.
+- [ ] 7.4 Crosscheck; release 1.2.0.
+
+### Phase 8: v1.3 VMware vSphere (SPEC-021, 022, 023)
+Decided 2026-11-18: password asked per app session and kept only in memory; flat tree with datacenter/cluster/ESXi host as VM fields; after release 1.1 (2026-11-19: moved to 1.3, after the tree menus). Tests: vcsim (govmomi's vSphere simulator, ESXi and vCenter mode) in CI, recorded SOAP responses as fixtures; manual check on the user's ESXi host and a vCenter with a restricted view.
+- [ ] 8.1 Config: `backend = "vsphere"`, field rules (SPEC-005); host editor shows only the fields of the chosen backend.
+- [ ] 8.2 HTTPS client: rustls (ring) on tokio; certificate check and `known_certs` with the accept dialog (SPEC-023).
+- [ ] 8.3 SOAP layer with the method allowlist; Login/Logout, session kept per host and ended on forget/reload/quit; password dialog (SPEC-022).
+- [ ] 8.4 Inventory: PropertyCollector traversal (paged), mapping to the model, permission gaps tolerated (SPEC-021); fixtures from vcsim and from real ESXi/vCenter responses (anonymised).
+- [ ] 8.5 GUI: vSphere fields (datacenter, cluster, ESXi host, Tools, hardware version), "n/a" for libvirt-only fields, console "not available for vSphere"; README (Read-only role, certificates).
+- [ ] 8.6 CI job with vcsim (ESXi and vCenter mode); manual tests on real systems; crosscheck.
 
 ### Later
 - SPEC-019 embedded VNC viewer; other backends (SPEC-017); `ProxyJump` support; vSphere password in the OS keychain (optional).

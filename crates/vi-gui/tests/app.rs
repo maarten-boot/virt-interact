@@ -624,3 +624,171 @@ fn console_states_in_the_app() {
     });
     assert!(app.messages.is_empty());
 }
+
+// TC-140: the VM menu: one console item per VNC/SPICE device with the same
+// rules as the Graphics table, Close while open, copy name/UUID; drawn
+// headless with the menu open.
+#[test]
+fn vm_menu() {
+    use vi_gui::app::TreeAction;
+    use vi_gui::console::{ConsoleKey, ConsoleState};
+    let dir = tempfile::tempdir().unwrap();
+    let (store, cache) = setup(dir.path());
+    let mut inv = fixture_inventory();
+    inv.domains[0].uuid = Some("00000000-0000-4000-8000-000000000001".into());
+    cache
+        .save(&CachedInventory::new("lab", 1_700_000_000, inv.clone()))
+        .unwrap();
+    let mut app = App::new(store, vec![], Some(cache));
+    let labels = |groups: &[Vec<vi_gui::app::MenuItem>]| -> Vec<String> {
+        groups.iter().flatten().map(|i| i.label.clone()).collect()
+    };
+
+    // Running VM with VNC on 127.0.0.1:5900.
+    let vm = &inv.domains[0];
+    let key = ConsoleKey {
+        host: "lab".into(),
+        domain: vm.name.clone(),
+        index: 0,
+    };
+    let g = app.vm_menu_items("lab", vm);
+    assert_eq!(labels(&g), ["Open console (VNC)", "Copy name", "Copy UUID"]);
+    assert_eq!(g[0][0].action, Ok(TreeAction::OpenConsole(key.clone())));
+    assert_eq!(g[1][0].action, Ok(TreeAction::CopyText(vm.name.clone())));
+    assert_eq!(
+        g[1][1].action,
+        Ok(TreeAction::CopyText(
+            "00000000-0000-4000-8000-000000000001".into()
+        ))
+    );
+    app.consoles.insert(
+        key.clone(),
+        ConsoleState::Open {
+            url: "vnc://127.0.0.1:40000".into(),
+        },
+    );
+    let g = app.vm_menu_items("lab", vm);
+    assert_eq!(g[0][0].label, "Close console (VNC)");
+    assert_eq!(g[0][0].action, Ok(TreeAction::CloseConsole(key.clone())));
+    app.consoles.insert(key.clone(), ConsoleState::Closing);
+    assert_eq!(
+        app.vm_menu_items("lab", vm)[0][0].action,
+        Err("closing…".into())
+    );
+
+    // Stopped VM: disabled with the reason; no details: refresh first;
+    // unknown UUID: disabled.
+    let stopped = &inv.domains[2];
+    let g = app.vm_menu_items("lab", stopped);
+    assert_eq!(g[0][0].label, "Open console (SPICE)");
+    assert_eq!(g[0][0].action, Err("VM not running".into()));
+    assert_eq!(g[1][1].action, Err("UUID unknown".into()));
+    let bare = Domain::new("bare", DomainState::Running);
+    let g = app.vm_menu_items("lab", &bare);
+    assert!(matches!(&g[0][0].action, Err(e) if e.contains("refresh the host")));
+
+    // Two VNC displays are numbered.
+    let mut two = inv.domains[0].clone();
+    let x = two.details.as_mut().unwrap();
+    let extra = x.graphics[0].clone();
+    x.graphics.push(extra);
+    assert_eq!(
+        labels(&app.vm_menu_items("lab", &two))[..2],
+        ["Open console (VNC 1)", "Open console (VNC 2)"]
+    );
+}
+
+// TC-141: the host menu; Edit/Remove disabled and no SSH items for the
+// local entries; Copy ssh command; Refresh disabled while busy.
+#[test]
+fn host_menu() {
+    use vi_gui::app::TreeAction;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "[local]\nenabled = \"always\"\nsession = false\n[[hosts]]\nname = \"lab\"\nhost = \"lab.example.lan\"\nuser = \"ops\"\nport = 2222\n",
+    )
+    .unwrap();
+    let (store, _, err) = ConfigStore::open(path);
+    assert!(err.is_none());
+    let mut app = App::new(store, vec![], None);
+    let ctx = egui::Context::default();
+    let g = app.host_menu_items("lab");
+    let labels: Vec<_> = g.iter().flatten().map(|i| i.label.as_str()).collect();
+    assert_eq!(
+        labels,
+        [
+            "Refresh",
+            "Edit…",
+            "Remove…",
+            "Start SSH",
+            "Copy ssh command"
+        ]
+    );
+    assert_eq!(
+        g[1][1].action,
+        Ok(TreeAction::CopyText(
+            "ssh -p 2222 -l ops -- lab.example.lan".into()
+        ))
+    );
+    // Edit opens the host form; Remove asks.
+    app.apply_tree_action(&ctx, TreeAction::Edit("lab".into()));
+    assert!(app.host_form.is_some());
+    app.host_form = None;
+    app.apply_tree_action(&ctx, TreeAction::Remove("lab".into()));
+    assert_eq!(app.confirm_remove.as_deref(), Some("lab"));
+    app.confirm_remove = None;
+
+    let local = app
+        .all_hosts()
+        .find(|h| h.local)
+        .map(|h| h.name.clone())
+        .expect("a local entry");
+    let g = app.host_menu_items(&local);
+    assert_eq!(g.len(), 1, "no SSH items for this machine");
+    assert!(g[0][0].action.is_ok());
+    assert!(g[0][1].action.is_err() && g[0][2].action.is_err());
+
+    app.hosts.get_mut("lab").unwrap().status = HostStatus::Refreshing;
+    assert_eq!(
+        app.host_menu_items("lab")[0][0].action,
+        Err("being read".into())
+    );
+}
+
+// TC-143 (Settings part): the terminal text is saved as a list; bad
+// quoting is not saved and says why; empty means automatic.
+#[test]
+fn terminal_setting() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, cache) = setup(dir.path());
+    let mut app = App::new(store, vec![], Some(cache));
+    let ctx = egui::Context::default();
+    app.apply_theme(&ctx);
+    app.settings_open = true;
+    app.load_terminal_setting();
+    assert_eq!(app.terminal_text, "");
+    app.terminal_text = "'/My Apps/term' -e".into();
+    app.apply_terminal_setting();
+    assert_eq!(
+        app.store.config.terminal.command,
+        Some(vec!["/My Apps/term".to_string(), "-e".to_string()])
+    );
+    assert!(
+        app.terminal_note.contains("configured"),
+        "{}",
+        app.terminal_note
+    );
+    let saved = std::fs::read_to_string(&app.store.path).unwrap();
+    assert!(saved.contains("[terminal]"), "{saved}");
+    frame(&mut app, &ctx);
+    app.terminal_text = "'open".into();
+    app.apply_terminal_setting();
+    assert!(app.terminal_note.starts_with("Not saved"));
+    assert!(app.store.config.terminal.command.is_some());
+    app.terminal_text = String::new();
+    app.apply_terminal_setting();
+    assert_eq!(app.store.config.terminal.command, None);
+    frame(&mut app, &ctx);
+}

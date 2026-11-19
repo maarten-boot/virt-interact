@@ -1,7 +1,8 @@
 # Release archives (Plan 5.1/5.2, SPEC-002, TC-120).
 # A pushed tag v<version> (equal to the Cargo version) tests and packages
-# every platform, then creates a DRAFT GitHub release with the archives and
-# the Changes.md section; publish it by hand after checking.
+# every platform, creates a draft GitHub release with the archives and the
+# Changes.md section, checks the six files and their checksums, and only
+# then publishes it as latest (SPEC-002, Plan 7.3, TC-123).
 # "Run workflow" (workflow_dispatch) packages without a release, to try it.
 name: Release
 
@@ -89,3 +90,7 @@ jobs:
           bash scripts/release_notes.sh "${GITHUB_REF_NAME#v}" > notes.md
           gh release create "$GITHUB_REF_NAME" dist/* --draft \
             --title "virt-interact $GITHUB_REF_NAME" --notes-file notes.md
+      - name: Check the files and checksums, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/publish_release.sh "$GITHUB_REF_NAME"

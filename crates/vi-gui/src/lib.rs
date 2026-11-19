@@ -5,6 +5,7 @@ pub mod app;
 pub mod console;
 pub mod prompts;
 pub mod startup;
+pub mod terminal;
 pub mod theme;
 pub mod view;
 pub mod worker;

@@ -18,6 +18,7 @@ use vi_ssh::Secret;
 
 use crate::console::{self, ConsoleKey, ConsoleState};
 use crate::prompts::{GuiPrompter, PromptKind, PromptRequest};
+use crate::terminal;
 use crate::theme;
 use crate::view::{self, Filter, StateColor, StateFilter};
 use crate::worker::{Event, HostConnector, HostStatus, Worker};
@@ -207,12 +208,44 @@ pub struct App {
     local_hosts: Vec<HostConfig>,
     /// Consoles opening or open (SPEC-018); closed ones are removed.
     pub consoles: HashMap<ConsoleKey, ConsoleState>,
+    /// Settings: the terminal command as text, and which terminal is used
+    /// or why the text was not saved (SPEC-025).
+    pub terminal_text: String,
+    pub terminal_note: String,
 }
 
 /// A click in the graphics table.
 enum ConsoleAction {
     Open(ConsoleKey),
     Close(ConsoleKey),
+}
+
+/// What a right-click menu item in the tree does (SPEC-024).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TreeAction {
+    Refresh(String),
+    Edit(String),
+    Remove(String),
+    StartSsh(String),
+    CopyText(String),
+    OpenConsole(ConsoleKey),
+    CloseConsole(ConsoleKey),
+}
+
+/// One item of a right-click menu; `Err` holds why it is disabled.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuItem {
+    pub label: String,
+    pub action: Result<TreeAction, String>,
+}
+
+impl MenuItem {
+    fn new(label: impl Into<String>, action: Result<TreeAction, String>) -> MenuItem {
+        MenuItem {
+            label: label.into(),
+            action,
+        }
+    }
 }
 
 impl App {
@@ -245,6 +278,8 @@ impl App {
             local_virsh: None,
             local_hosts: Vec::new(),
             consoles: HashMap::new(),
+            terminal_text: String::new(),
+            terminal_note: String::new(),
         };
         app.local_hosts = app.store.config.local_hosts(false);
         app.sync_hosts();
@@ -394,6 +429,211 @@ impl App {
         let viewer = console::find_viewer(self.store.config.console.viewer.as_deref());
         if w.open_console(h, self.store.config.ssh.clone(), key.clone(), viewer) {
             self.consoles.insert(key, ConsoleState::Opening);
+        }
+    }
+
+    // ---- right-click menus (SPEC-024) -----------------------------------
+
+    /// The menu of a VM in the tree, in groups (separated when drawn).
+    pub fn vm_menu_items(&self, host: &str, d: &Domain) -> Vec<Vec<MenuItem>> {
+        let mut consoles = Vec::new();
+        match &d.details {
+            None => consoles.push(MenuItem::new(
+                "Open console",
+                Err("refresh the host first to read the VM's details".into()),
+            )),
+            Some(x) => {
+                let devices: Vec<_> = x
+                    .graphics
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, g)| vi_core::model::CONSOLE_KINDS.contains(&g.kind.as_str()))
+                    .collect();
+                if devices.is_empty() {
+                    consoles.push(MenuItem::new(
+                        "Open console",
+                        Err("no VNC or SPICE display".into()),
+                    ));
+                }
+                for (n, (index, g)) in devices.iter().enumerate() {
+                    let kind = g.kind.to_uppercase();
+                    let same = devices.iter().filter(|(_, o)| o.kind == g.kind).count();
+                    let name = if same > 1 {
+                        let nth = devices[..=n]
+                            .iter()
+                            .filter(|(_, o)| o.kind == g.kind)
+                            .count();
+                        format!("{kind} {nth}")
+                    } else {
+                        kind
+                    };
+                    let key = ConsoleKey {
+                        host: host.to_string(),
+                        domain: d.name.clone(),
+                        index: *index,
+                    };
+                    let open = format!("Open console ({name})");
+                    consoles.push(match self.consoles.get(&key) {
+                        Some(ConsoleState::Open { .. }) => MenuItem::new(
+                            format!("Close console ({name})"),
+                            Ok(TreeAction::CloseConsole(key)),
+                        ),
+                        Some(ConsoleState::Opening) => MenuItem::new(open, Err("opening…".into())),
+                        Some(ConsoleState::Closing) => MenuItem::new(open, Err("closing…".into())),
+                        _ => MenuItem::new(
+                            open,
+                            view::console_availability(&d.state, g)
+                                .map(|()| TreeAction::OpenConsole(key)),
+                        ),
+                    });
+                }
+            }
+        }
+        let copy = vec![
+            MenuItem::new("Copy name", Ok(TreeAction::CopyText(d.name.clone()))),
+            MenuItem::new(
+                "Copy UUID",
+                d.uuid
+                    .clone()
+                    .map(TreeAction::CopyText)
+                    .ok_or_else(|| "UUID unknown".to_string()),
+            ),
+        ];
+        vec![consoles, copy]
+    }
+
+    /// The menu of a host in the tree, in groups.
+    pub fn host_menu_items(&self, name: &str) -> Vec<Vec<MenuItem>> {
+        let Some(cfg) = self.host_config(name) else {
+            return Vec::new();
+        };
+        let busy = self.hosts.get(name).is_some_and(|e| e.status.busy());
+        let n = name.to_string();
+        let local = || Err("this machine is set up under [local] in the config file".to_string());
+        let mut groups = vec![vec![
+            MenuItem::new(
+                "Refresh",
+                if busy {
+                    Err("being read".into())
+                } else {
+                    Ok(TreeAction::Refresh(n.clone()))
+                },
+            ),
+            MenuItem::new(
+                "Edit…",
+                if cfg.local {
+                    local()
+                } else {
+                    Ok(TreeAction::Edit(n.clone()))
+                },
+            ),
+            MenuItem::new(
+                "Remove…",
+                if cfg.local {
+                    local()
+                } else {
+                    Ok(TreeAction::Remove(n.clone()))
+                },
+            ),
+        ]];
+        if !cfg.local {
+            groups.push(vec![
+                MenuItem::new("Start SSH", Ok(TreeAction::StartSsh(n))),
+                MenuItem::new(
+                    "Copy ssh command",
+                    Ok(TreeAction::CopyText(terminal::command_line(
+                        &terminal::ssh_args(cfg),
+                    ))),
+                ),
+            ]);
+        }
+        groups
+    }
+
+    /// Carry out a menu choice.
+    pub fn apply_tree_action(&mut self, ctx: &egui::Context, action: TreeAction) {
+        match action {
+            TreeAction::Refresh(n) => self.refresh(&n),
+            TreeAction::Edit(n) => {
+                if let Some(cfg) = self.host_config(&n).cloned() {
+                    self.host_form = Some(HostForm::edit(&cfg));
+                }
+            }
+            TreeAction::Remove(n) => self.confirm_remove = Some(n),
+            TreeAction::StartSsh(n) => self.start_ssh(&n),
+            TreeAction::CopyText(t) => ctx.copy_text(t),
+            TreeAction::OpenConsole(k) => self.open_console(k),
+            TreeAction::CloseConsole(k) => self.close_console(&k),
+        }
+    }
+
+    /// Open a terminal with ssh to a host (SPEC-025).
+    pub fn start_ssh(&mut self, name: &str) {
+        let Some(cfg) = self.host_config(name).cloned() else {
+            return;
+        };
+        match terminal::start_ssh(&cfg, self.store.config.terminal.command.as_deref()) {
+            Ok(line) => self.messages.push(Message::info(format!(
+                "Started SSH to {} in a terminal: {line}",
+                cfg.display_name()
+            ))),
+            Err(e) => self.messages.push(Message::error(format!(
+                "SSH to {}: {e}",
+                cfg.display_name()
+            ))),
+        }
+    }
+
+    /// Draw a menu; returns the chosen action.
+    fn show_menu(&self, ui: &mut egui::Ui, groups: &[Vec<MenuItem>]) -> Option<TreeAction> {
+        let mut chosen = None;
+        for (i, group) in groups.iter().enumerate() {
+            if i > 0 {
+                ui.separator();
+            }
+            for item in group {
+                let mut r = self.button(ui, item.action.is_ok(), &item.label);
+                if let Err(reason) = &item.action {
+                    r = r.on_disabled_hover_text(reason);
+                }
+                if r.clicked() {
+                    chosen = item.action.clone().ok();
+                    ui.close();
+                }
+            }
+        }
+        chosen
+    }
+
+    /// Settings: show the configured terminal command and which is used.
+    pub fn load_terminal_setting(&mut self) {
+        self.terminal_text = self
+            .store
+            .config
+            .terminal
+            .command
+            .as_deref()
+            .map(terminal::command_line)
+            .unwrap_or_default();
+        self.terminal_note = self.terminal_in_use();
+    }
+
+    fn terminal_in_use(&self) -> String {
+        match terminal::choose(self.store.config.terminal.command.as_deref()) {
+            Ok(t) => format!("Used: {}", t.describe()),
+            Err(e) => e,
+        }
+    }
+
+    /// Settings: save the terminal text (empty means automatic).
+    pub fn apply_terminal_setting(&mut self) {
+        match terminal::split_words(&self.terminal_text) {
+            Err(e) => self.terminal_note = format!("Not saved: {e}"),
+            Ok(words) => {
+                self.store.config.terminal.command = (!words.is_empty()).then_some(words);
+                self.save_config();
+                self.terminal_note = self.terminal_in_use();
+            }
         }
     }
 
@@ -837,6 +1077,7 @@ impl App {
             }
             if ui.button("Settings…").clicked() {
                 self.settings_open = true;
+                self.load_terminal_setting();
             }
             if ui
                 .button("Reload config")
@@ -896,6 +1137,7 @@ impl App {
         }
         let hosts: Vec<String> = self.all_hosts().map(|h| h.name.clone()).collect();
         let mut new_sel = None;
+        let mut action = None;
         for name in hosts {
             let Some(entry) = self.hosts.get(&name) else {
                 continue;
@@ -913,6 +1155,11 @@ impl App {
                     if r.clicked() {
                         new_sel = Some(Selection::Host(name.clone()));
                     }
+                    r.context_menu(|ui| {
+                        if let Some(a) = self.show_menu(ui, &self.host_menu_items(&name)) {
+                            action = Some(a);
+                        }
+                    });
                     ui.label(status);
                     if entry.shown.as_ref().is_some_and(|s| s.cached) {
                         ui.label(RichText::new("(cached)").color(theme::c(self.palette.weak_text)));
@@ -945,6 +1192,12 @@ impl App {
                                 if r.clicked() {
                                     new_sel = Some(Selection::Domain(name.clone(), d.name.clone()));
                                 }
+                                r.context_menu(|ui| {
+                                    let items = self.vm_menu_items(&name, d);
+                                    if let Some(a) = self.show_menu(ui, &items) {
+                                        action = Some(a);
+                                    }
+                                });
                                 ui.label(RichText::new(badge).color(self.state_color(col)));
                                 if d.error.is_some() {
                                     ui.label(
@@ -968,6 +1221,9 @@ impl App {
         self.scroll_to_selection = false;
         if let Some(s) = new_sel {
             self.selection = s;
+        }
+        if let Some(a) = action {
+            self.apply_tree_action(&ui.ctx().clone(), a);
         }
     }
 
@@ -1441,6 +1697,38 @@ impl App {
                         })
                         .wrap(),
                     );
+                    ui.end_row();
+                    ui.label("Terminal (Start SSH)");
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            let r = ui.add(
+                                egui::TextEdit::singleline(&mut self.terminal_text)
+                                    .desired_width(330.0)
+                                    .hint_text("automatic"),
+                            );
+                            let enter =
+                                r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                            if self
+                                .button(ui, true, "Apply")
+                                .on_hover_text(
+                                    "Program and arguments, e.g. kitty -e; the ssh command is added. \
+                                     Empty: detected automatically.",
+                                )
+                                .clicked()
+                                || enter
+                            {
+                                self.apply_terminal_setting();
+                            }
+                        });
+                        // One line, so a new note never changes the layout.
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(&self.terminal_note)
+                                    .color(theme::c(self.palette.weak_text)),
+                            )
+                            .truncate(),
+                        );
+                    });
                     ui.end_row();
                     ui.label("Cache");
                     ui.add(

@@ -158,7 +158,7 @@ Each test case is traced to a Spec item.
 | TC-106 | CI/M | `remote-viewer` installed as the README says is found by the app's search and runs (`console-check --find`): Linux (apt), macOS (MacPorts), Windows (MSI, checksum checked; found in `Program Files\VirtViewer*\bin`, not on `PATH`). Linux also opens a real VNC console (TigerVNC `Xvnc`) through the tunnel: the viewer is still connected after 8 s. The checker itself was tried with stand-ins: pass with a viewer that keeps its connection, fail for one that drops it or exits. | `.github/workflows/viewer-check.yml` (by hand), `vi-gui examples/console-check.rs` | pass (2026-11-17, run 44167663646): Linux `/usr/bin/remote-viewer` 7.0, VNC console through the tunnel connected after 8 s; macOS `/opt/local/bin/remote-viewer` 11.0; Windows `C:\Program Files\VirtViewer v11.0-256\bin\remote-viewer.exe` 11.0-256 |
 | TC-105 | U | The viewer is found: on the search path, in extra directories (Homebrew, MacPorts (TC-112), `Program Files\VirtViewer*\bin` newest version first, each folder once), by a configured path or name; a blank setting means the default; a missing viewer gives the platform's install hint and the config key; `[console] viewer` parses and is in the example config. | `vi-gui console::tests`, `vi-core config::tests::example_config_parses` | pass (2026-11-17) |
 
-## SPEC-021 / 022 / 023: VMware vSphere (v1.2, planned)
+## SPEC-021 / 022 / 023: VMware vSphere (v1.3, planned)
 
 | ID | Type | Description | Where | Status |
 |----|------|-------------|-------|--------|
@@ -169,4 +169,15 @@ Each test case is traced to a Spec item.
 | TC-134 | U/I | Certificates: system-trusted accepted; unknown shown with fingerprint, accepted → stored in `known_certs` (0600) and trusted next time; rejected → aborted; changed fingerprint refused; TLS < 1.2 refused (SPEC-023). | `vi-vsphere` tests with a local TLS server | planned |
 | TC-135 | U | The password is wiped after login and appears in no log line, cache file or config (SPEC-022). | unit tests, log capture | planned |
 | TC-136 | M | Real ESXi host (user's) and a vCenter with a restricted view: the inventory loads, hidden objects are absent without errors, the console shows "not available for vSphere". | manual | planned |
+
+## SPEC-024 / 025: Tree menus and SSH in a terminal (v1.2)
+
+| ID | Type | Description | Where | Status |
+|----|------|-------------|-------|--------|
+| TC-140 | U/E | VM menu: one "Open console" per VNC/SPICE device (labelled by kind, numbered when repeated), disabled with the reason when not possible or details are missing; "Close console" while open; "Copy name"/"Copy UUID" put the text on the clipboard; right-click does not change the selection. | `vi-gui tests/app.rs vm_menu`; Xvfb check | pass (2026-11-19) |
+| TC-141 | U/E | Host menu: Refresh (disabled while busy), Edit…, Remove… (disabled for local entries), Start SSH and Copy ssh command (not for local entries). | `vi-gui tests/app.rs host_menu`; Xvfb check | pass (2026-11-19) |
+| TC-142 | U | The ssh argument list from a host entry: only set values (`-p`, `-l`, `-i`), `--` before the host; the copied line is POSIX-quoted. | `vi-gui terminal::tests::ssh_command` | pass (2026-11-19) |
+| TC-143 | U | Terminal choice: configured command first (arguments appended, no shell); Linux detection order on a fake search path; macOS AppleScript quoting (quotes, backslashes); Windows `wt.exe` else a new console; none found gives the error naming `[terminal] command`; `[terminal] command` parses and is in the example config; the Settings text round-trips with quoting. | `vi-gui terminal::tests`, `tests/app.rs terminal_setting`, `vi-core config::tests::example_config_parses` | pass (2026-11-19) |
+| TC-144 | M | Start SSH opens a terminal with a working ssh session on Linux, Windows (and macOS when available). | manual | planned |
+| TC-123 | CI | Release pipeline: the release is published only when all six files are attached and every archive matches its checksum; otherwise the job fails and the release stays a draft. | `release.yml`, `scripts/publish_release.sh` | script tried: v1.0.0/v1.1.0 pass, missing file refused (2026-11-19, publish stubbed); pipeline: next tag |
 

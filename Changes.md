@@ -4,7 +4,19 @@ Changes between releases. Newest on top.
 
 ## Unreleased
 
-Nothing yet.
+**Tree menus**
+- Right-click a VM in the tree: "Open console" for each VNC/SPICE display
+  (or "Close console"), "Copy name", "Copy UUID".
+- Right-click a host: "Refresh", "Edit…", "Remove…", "Start SSH" (opens
+  a terminal running your own `ssh` to the host, with the host's user,
+  port and key) and "Copy ssh command".
+- The terminal is detected (Linux: x-terminal-emulator, gnome-terminal,
+  konsole, …; macOS: Terminal.app; Windows: Windows Terminal or a console
+  window) or set with `[terminal] command` or in Settings.
+
+**Releases**
+- A release is published automatically once its six files are attached
+  and every archive matches its checksum.
 
 ## 1.1.0 (2026-11-19)
 

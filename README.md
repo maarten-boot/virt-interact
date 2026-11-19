@@ -7,7 +7,8 @@ connection.
 
 Status: version 1.1.0 is released (GitHub releases page): the read-only
 inventory and VNC/SPICE consoles over SSH (see `Changes.md` for what it
-does and its known limitations). Planned for 1.2: VMware ESXi and vCenter.
+does and its known limitations). Next: right-click menus in the tree and
+SSH to a host in a terminal (1.2), VMware ESXi and vCenter (1.3).
 See `architecture/Spec.md` and `architecture/Plan.md`.
 
 ## Install
@@ -120,6 +121,20 @@ gets the URL (`vnc://127.0.0.1:<port>` or `spice://…`) as its only
 argument. To check a viewer without the GUI:
 `cargo run -p vi-gui --example console-check -- --find` (or with
 `vnc HOST:PORT` to open a console of this machine through the tunnel).
+
+**Right-click menus** (1.2, in development): right-click a VM in the tree
+for **Open console** (one per VNC/SPICE display), **Close console**,
+**Copy name** and **Copy UUID**; right-click a host for **Refresh**,
+**Edit…**, **Remove…**, **Start SSH** and **Copy ssh command**. Start SSH
+opens a terminal running your own `ssh` (OpenSSH) with the host's `user`,
+`port` and `identity_file` from this app; the rest comes from your
+`~/.ssh/config`. The terminal is found automatically, or set it in
+**Settings…** or in the config:
+
+```toml
+[terminal]
+command = ["kitty", "-e"]   # the ssh command is added as arguments
+```
 
 Contrast is set under **Settings…**; the choice is saved to the config.
 Hovering or pressing changes only colours; nothing moves. Drag the line

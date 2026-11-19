@@ -42,6 +42,14 @@ session = true                  # also show "localhost (session)": your own VMs
 # A full path or another name works.
 # viewer = "remote-viewer"
 
+[terminal]
+# The terminal for "Start SSH" on a host (v1.2): the program and its
+# arguments; the ssh command is added as separate arguments (no shell).
+# Unset: detected (Linux: x-terminal-emulator, gnome-terminal, konsole,
+# xfce4-terminal, kitty, alacritty, xterm; macOS: Terminal.app; Windows:
+# Windows Terminal, else a console window). Also settable in Settings.
+# command = ["kitty", "-e"]
+
 # One [[hosts]] block per remote host. Only name and host are required.
 
 [[hosts]]
