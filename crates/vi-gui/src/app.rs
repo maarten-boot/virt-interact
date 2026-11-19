@@ -1905,6 +1905,8 @@ impl App {
         enum Answer {
             HostKey(bool),
             Passphrase(bool),
+            Certificate(bool),
+            Password(bool),
         }
         let mut answer = None;
         let weak = theme::c(self.palette.weak_text);
@@ -1961,6 +1963,71 @@ impl App {
                             }
                         });
                     }
+                    PromptKind::Certificate(c) => {
+                        ui.heading("Unknown server certificate");
+                        ui.label(format!(
+                            "The certificate of \"{}\" ({}) is not trusted by this system.",
+                            c.name, c.target
+                        ));
+                        egui::Grid::new("cert-grid").num_columns(2).show(ui, |ui| {
+                            for (k, v) in [
+                                ("Subject", &c.subject),
+                                ("Issuer", &c.issuer),
+                                ("Valid from", &c.not_before),
+                                ("Valid until", &c.not_after),
+                            ] {
+                                ui.label(k);
+                                ui.add(egui::Label::new(v.as_str()).wrap());
+                                ui.end_row();
+                            }
+                        });
+                        ui.label("SHA-256 fingerprint:");
+                        ui.add(egui::Label::new(RichText::new(&c.fingerprint).monospace()).wrap());
+                        ui.label(
+                            RichText::new(
+                                "Compare the fingerprint with the server (ESXi: Host Client → \
+                                 Manage → Security → Certificates) before accepting.",
+                            )
+                            .color(weak),
+                        );
+                        ui.horizontal(|ui| {
+                            if ui.button("Accept and remember").clicked() {
+                                answer = Some(Answer::Certificate(true));
+                            }
+                            if ui.button("Reject").clicked() {
+                                answer = Some(Answer::Certificate(false));
+                            }
+                        });
+                    }
+                    PromptKind::Password(w) => {
+                        ui.heading("vSphere login");
+                        if w.retry {
+                            ui.label(
+                                RichText::new("Login failed. Check the user and password.")
+                                    .color(theme::c(self.palette.state_error)),
+                            );
+                        }
+                        ui.label(format!(
+                            "Password of {} on \"{}\" ({})",
+                            w.user, w.name, w.target
+                        ));
+                        let r = ui.add(
+                            egui::TextEdit::singleline(&mut p.passphrase)
+                                .password(true)
+                                .desired_width(280.0),
+                        );
+                        r.request_focus();
+                        let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        ui.label(RichText::new("Used once to log in; never stored.").color(weak));
+                        ui.horizontal(|ui| {
+                            if ui.button("Log in").clicked() || enter {
+                                answer = Some(Answer::Password(true));
+                            }
+                            if ui.button("Cancel").clicked() {
+                                answer = Some(Answer::Password(false));
+                            }
+                        });
+                    }
                 }
             });
         if let Some(a) = answer {
@@ -1979,6 +2046,14 @@ impl App {
                 Answer::Passphrase(_) => {
                     drop(secret);
                     request.answer_passphrase(None)
+                }
+                Answer::Certificate(yes) => request.answer_certificate(yes),
+                Answer::Password(true) if !secret.expose().is_empty() => {
+                    request.answer_password(Some(secret))
+                }
+                Answer::Password(_) => {
+                    drop(secret);
+                    request.answer_password(None)
                 }
             }
         }

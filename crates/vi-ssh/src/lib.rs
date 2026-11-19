@@ -12,7 +12,9 @@ pub mod sshconfig;
 pub mod tunnel;
 
 pub use error::{SshError, SshErrorKind};
-pub use prompt::{HostKeyPrompt, NoPrompt, Prompter, ScriptedPrompter};
+pub use prompt::{
+    CertificatePrompt, HostKeyPrompt, NoPrompt, PasswordPrompt, Prompter, ScriptedPrompter,
+};
 pub use runner::{CommandOutput, CommandRunner, ConsoleStream, MockRunner};
 pub use secret::Secret;
 pub use session::{ConnectOptions, SshSession};
