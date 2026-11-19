@@ -73,3 +73,35 @@ jobs:
           name: virt-interact-${{ matrix.os }}
           path: dist/*
           if-no-files-found: error
+
+  # vSphere simulator tests (Plan 8.6, TC-133): vcsim from govmomi, built
+  # from a pinned commit (go install refuses the module's replace
+  # directives), then the tests that need it (VI_VCSIM).
+  vsphere-sim:
+    name: vSphere simulator (vcsim)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+      - name: Build vcsim (govmomi 3e19bc8)
+        run: |
+          git init -q "$RUNNER_TEMP/govmomi"
+          cd "$RUNNER_TEMP/govmomi"
+          git fetch -q --depth 1 https://github.com/vmware/govmomi 3e19bc8377fca88309e6d00bc897063fef0e2d64
+          git checkout -q FETCH_HEAD
+          cd vcsim && go build -o "$RUNNER_TEMP/vcsim" .
+          "$RUNNER_TEMP/vcsim" -h 2>&1 | head -n 3 || true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Tests against vcsim (ESXi and vCenter mode)
+        env:
+          VI_VCSIM: ${{ runner.temp }}/vcsim
+        run: |
+          set -o pipefail
+          cargo test --locked -p vi-vsphere -p vi-backend -- --nocapture 2>&1 | tee test.log
+          # Every simulator test must really have run.
+          if grep -q "skipped: set VI_VCSIM" test.log; then exit 1; fi

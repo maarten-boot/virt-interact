@@ -73,3 +73,6 @@ Done:
 **User:** Pushed 8.3/8.4.
 
 **Claude:** vSphere host page (backend, host, port, user, server name); VM page with datacenter, cluster, ESXi host, hardware version, VMware Tools, notes; ID/persistent/autostart "n/a"; CPU and memory without libvirt-only rows (mode, dies, threads, current memory, hugepages); the Graphics section says why there are no consoles; "Raw properties (XML)"; "(template)" in tree and heading; the menu's console item says "not available for vSphere". README section (example host entry, Read-only role, password never stored, certificates). End to end in the real app under Xvfb against vcsim (vCenter mode): certificate dialog (accepted → `known_certs`), a wrong password shows "Login failed" and asks again, the right one gives the inventory (4 VMs), VM page correct, cached inventory after a restart. Found and fixed: "→" in the certificate hint had no glyph in the font (boxes). New TC-137. 173 tests pass.
+
+## 12. Phase 8.6 (part): CI job with vcsim
+**Claude:** `vsphere-sim` job in `ci.yml`: builds vcsim from govmomi `3e19bc8` (Go 1.25), runs the vi-vsphere and vi-backend tests with `VI_VCSIM`, fails if any simulator test was skipped (`pipefail` set, since GitHub's bash has none by default). Checked locally both ways. Open in 8.6: TC-136 (the user's ESXi host and restricted vCenter), crosscheck.
